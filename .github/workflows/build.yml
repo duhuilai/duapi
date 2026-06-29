@@ -19,10 +19,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: rm -f package-lock.json && npm install --no-audit --no-fund
 
       - name: Build Vite + Electron TypeScript
         run: npm run build
@@ -58,10 +57,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: rm -f package-lock.json && npm install --no-audit --no-fund
 
       - name: Build Vite + Electron TypeScript
         run: npm run build
