@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApi } from '../store/ApiContext';
 import type { ResponseParam, ErrorCode } from '../types';
+import { useColumnResize, resizeHandleStyle } from '../utils/useColumnResize';
 
 type RespTab = 'body' | 'headers' | 'cookies' | 'schema';
 
@@ -17,6 +18,14 @@ export default function ResponsePanel() {
 
   const responseParams = activeEndpoint?.responseParams ?? [];
   const errorCodes = activeEndpoint?.errorCodes ?? [];
+
+  // 列宽拖拽
+  const { widths: sw, onResizeStart: onSchemaResize } = useColumnResize({
+    path: 160, type: 72, required: 36, desc: 180,
+  });
+  const { widths: ew, onResizeStart: onEcResize } = useColumnResize({
+    code: 90, http: 60, msg: 140, desc: 180,
+  });
 
   const statusColor = useMemo(() => {
     if (!response) return '#64748B';
@@ -90,17 +99,20 @@ export default function ResponsePanel() {
   };
 
   const renderParamRows = (params: ResponseParam[], depth = 0): React.ReactNode[] => {
+    const colStyle = (col: string, extra: React.CSSProperties = {}): React.CSSProperties => ({
+      width: sw[col], flexShrink: 0, display: 'flex', alignItems: 'center', ...extra,
+    });
     return params.flatMap(param => {
       const rows: React.ReactNode[] = [];
       rows.push(
-        <div key={param.id} style={schemaRow(depth)}>
-          <div style={{ ...schemaCell('path'), paddingLeft: 8 + depth * 16 }}>
+        <div key={param.id} style={{ display: 'flex', borderBottom: '1px solid #F1F5F9', padding: '2px 0', minHeight: 30 }}>
+          <div style={{ ...colStyle('path'), paddingLeft: 8 + depth * 16, overflow: 'hidden' }}>
             <code style={pathCode}>{param.path || '(unnamed)'}</code>
           </div>
-          <div style={schemaCell('type')}>
+          <div style={colStyle('type')}>
             <span style={typeBadge(param.type)}>{param.type}</span>
           </div>
-          <div style={schemaCell('required')}>
+          <div style={{ ...colStyle('required'), justifyContent: 'center' }}>
             <input
               type="checkbox"
               checked={param.required}
@@ -108,7 +120,7 @@ export default function ResponsePanel() {
               style={{ cursor: 'pointer' }}
             />
           </div>
-          <div style={schemaCell('desc')}>
+          <div style={{ ...colStyle('desc'), minWidth: 0, flex: 1 }}>
             <input
               style={descInput}
               type="text"
@@ -229,11 +241,22 @@ export default function ResponsePanel() {
 
             {responseParams.length > 0 && (
               <>
-                <div style={schemaHeader}>
-                  <span style={{ ...schemaCell('path'), fontWeight: 600, fontSize: 10, color: '#64748B', paddingLeft: 8 }}>字段路径</span>
-                  <span style={{ ...schemaCell('type'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>类型</span>
-                  <span style={{ ...schemaCell('required'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>必填</span>
-                  <span style={{ ...schemaCell('desc'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>说明</span>
+                <div style={{ display: 'flex', borderBottom: '2px solid #DBEAFE', padding: '4px 0', marginBottom: 2 }}>
+                  <div style={{ width: sw.path, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', paddingLeft: 8, position: 'relative' }}>
+                    字段路径
+                    <div style={resizeHandleStyle} onMouseDown={onSchemaResize('path')} />
+                  </div>
+                  <div style={{ width: sw.type, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                    类型
+                    <div style={resizeHandleStyle} onMouseDown={onSchemaResize('type')} />
+                  </div>
+                  <div style={{ width: sw.required, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', textAlign: 'center', position: 'relative' }}>
+                    必填
+                    <div style={resizeHandleStyle} onMouseDown={onSchemaResize('required')} />
+                  </div>
+                  <div style={{ flex: 1, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                    说明
+                  </div>
                 </div>
                 <div style={{ flex: '0 0 auto', maxHeight: 200, overflow: 'auto', minHeight: 0 }}>
                   {renderParamRows(responseParams)}
@@ -258,17 +281,28 @@ export default function ResponsePanel() {
 
               {errorCodes.length > 0 && (
                 <>
-                  <div style={ecTableHeader}>
-                    <span style={ecCell('code')}>错误码</span>
-                    <span style={ecCell('http')}>HTTP</span>
-                    <span style={ecCell('msg')}>错误信息</span>
-                    <span style={ecCell('desc')}>说明</span>
-                    <span style={ecCell('act')}></span>
+                  <div style={{ display: 'flex', borderBottom: '1px solid #DBEAFE', padding: '3px 0', marginBottom: 2 }}>
+                    <div style={{ width: ew.code, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                      错误码
+                      <div style={resizeHandleStyle} onMouseDown={onEcResize('code')} />
+                    </div>
+                    <div style={{ width: ew.http, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                      HTTP
+                      <div style={resizeHandleStyle} onMouseDown={onEcResize('http')} />
+                    </div>
+                    <div style={{ width: ew.msg, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                      错误信息
+                      <div style={resizeHandleStyle} onMouseDown={onEcResize('msg')} />
+                    </div>
+                    <div style={{ flex: 1, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                      说明
+                    </div>
+                    <div style={{ width: 28, flexShrink: 0 }}></div>
                   </div>
                   <div style={{ maxHeight: 220, overflow: 'auto' }}>
                     {errorCodes.map(ec => (
-                      <div key={ec.id} style={ecRow}>
-                        <div style={ecCell('code')}>
+                      <div key={ec.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #F1F5F9', padding: '2px 0', minHeight: 28 }}>
+                        <div style={{ width: ew.code, flexShrink: 0, padding: '0 4px' }}>
                           <input
                             style={ecInput}
                             value={ec.code}
@@ -276,7 +310,7 @@ export default function ResponsePanel() {
                             placeholder="如 1001"
                           />
                         </div>
-                        <div style={ecCell('http')}>
+                        <div style={{ width: ew.http, flexShrink: 0, padding: '0 4px' }}>
                           <select
                             style={ecSelect}
                             value={ec.httpStatus}
@@ -287,7 +321,7 @@ export default function ResponsePanel() {
                             ))}
                           </select>
                         </div>
-                        <div style={ecCell('msg')}>
+                        <div style={{ width: ew.msg, flexShrink: 0, padding: '0 4px' }}>
                           <input
                             style={ecInput}
                             value={ec.message}
@@ -295,7 +329,7 @@ export default function ResponsePanel() {
                             placeholder="如 Token已过期"
                           />
                         </div>
-                        <div style={ecCell('desc')}>
+                        <div style={{ flex: 1, minWidth: 0, padding: '0 4px' }}>
                           <input
                             style={ecInput}
                             value={ec.description}
@@ -303,7 +337,7 @@ export default function ResponsePanel() {
                             placeholder="详细说明及处理建议"
                           />
                         </div>
-                        <div style={ecCell('act')}>
+                        <div style={{ width: 28, flexShrink: 0 }}>
                           <button
                             style={ecDelBtn}
                             onClick={() => handleDeleteErrorCode(ec.id)}
@@ -335,31 +369,7 @@ export default function ResponsePanel() {
   );
 }
 
-// ---- Schema 内部组件样式 ----
-
-const schemaHeader: React.CSSProperties = {
-  display: 'flex',
-  borderBottom: '2px solid #DBEAFE',
-  padding: '4px 0',
-  marginBottom: 2,
-};
-
-const schemaRow = (depth: number): React.CSSProperties => ({
-  display: 'flex',
-  borderBottom: '1px solid #F1F5F9',
-  padding: '2px 0',
-  alignItems: 'center',
-  minHeight: 30,
-});
-
-const schemaCell = (kind: 'path' | 'type' | 'required' | 'desc'): React.CSSProperties => ({
-  ...({
-    path: { flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, fontSize: 11 },
-    type: { width: 72, flexShrink: 0, fontSize: 11, display: 'flex', alignItems: 'center' },
-    required: { width: 36, flexShrink: 0, fontSize: 11, display: 'flex', justifyContent: 'center', alignItems: 'center' },
-    desc: { flex: 3, minWidth: 0, fontSize: 11 },
-  }[kind]),
-});
+// ---- Styles ----
 
 const pathCode: React.CSSProperties = {
   fontSize: 11,
@@ -558,31 +568,6 @@ const ecAddBtn: React.CSSProperties = {
   borderRadius: 4,
   padding: '2px 8px',
   cursor: 'pointer',
-};
-
-const ecTableHeader: React.CSSProperties = {
-  display: 'flex',
-  borderBottom: '1px solid #DBEAFE',
-  padding: '3px 0',
-  marginBottom: 2,
-};
-
-const ecCell = (kind: 'code' | 'http' | 'msg' | 'desc' | 'act'): React.CSSProperties => ({
-  ...({
-    code: { width: 80, flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
-    http: { width: 60, flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
-    msg: { flex: 2, minWidth: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
-    desc: { flex: 3, minWidth: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
-    act: { width: 28, flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#64748B' },
-  }[kind]),
-});
-
-const ecRow: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  borderBottom: '1px solid #F1F5F9',
-  padding: '2px 0',
-  minHeight: 28,
 };
 
 const ecInput: React.CSSProperties = {

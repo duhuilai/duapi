@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApi } from '../store/ApiContext';
 import type { ResponseParam } from '../types';
+import { useColumnResize, resizeHandleStyle } from '../utils/useColumnResize';
 
 type TabName = 'params' | 'headers' | 'auth' | 'body' | 'prescript' | 'tests';
 
@@ -289,6 +290,10 @@ function BodyEditor() {
   const bodyParams = activeEndpoint?.bodyParams || [];
   const [schemaOpen, setSchemaOpen] = useState(false);
 
+  const { widths: bw, onResizeStart: onBodyResize } = useColumnResize({
+    path: 160, type: 72, required: 36, desc: 180,
+  });
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', gap: 4, padding: '8px 0', alignItems: 'center' }}>
@@ -351,16 +356,25 @@ function BodyEditor() {
               暂无参数说明，点击上方「📋 从 JSON 生成」按钮自动解析
             </div>
           ) : (
-            <table style={styles.schemaTable}>
-              <thead>
-                <tr>
-                  <th style={{ ...styles.schemaTh, width: '35%' }}>字段路径</th>
-                  <th style={{ ...styles.schemaTh, width: '12%' }}>类型</th>
-                  <th style={{ ...styles.schemaTh, width: '8%' }}>必填</th>
-                  <th style={{ ...styles.schemaTh, width: '45%' }}>说明</th>
-                </tr>
-              </thead>
-              <tbody>
+            <div style={styles.schemaPanel}>
+              <div style={{ display: 'flex', borderBottom: '2px solid #DBEAFE', padding: '6px 0', marginBottom: 4 }}>
+                <div style={{ width: bw.path, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                  字段路径
+                  <div style={resizeHandleStyle} onMouseDown={onBodyResize('path')} />
+                </div>
+                <div style={{ width: bw.type, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                  类型
+                  <div style={resizeHandleStyle} onMouseDown={onBodyResize('type')} />
+                </div>
+                <div style={{ width: bw.required, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', textAlign: 'center', position: 'relative' }}>
+                  必填
+                  <div style={resizeHandleStyle} onMouseDown={onBodyResize('required')} />
+                </div>
+                <div style={{ flex: 1, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                  说明
+                </div>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                 {bodyParams.map(p => (
                   <SchemaRow
                     key={p.id}
@@ -369,10 +383,11 @@ function BodyEditor() {
                       dispatch({ type: 'UPDATE_BODY_PARAM', payload: { paramId, field, value } })
                     }
                     level={0}
+                    widths={bw}
                   />
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -384,10 +399,12 @@ function SchemaRow({
   param,
   onUpdate,
   level,
+  widths,
 }: {
   param: ResponseParam;
   onUpdate: (paramId: string, field: string, value: string | boolean) => void;
   level: number;
+  widths: Record<string, number>;
 }) {
   const typeColors: Record<string, string> = {
     string: '#16A34A',
@@ -402,14 +419,16 @@ function SchemaRow({
 
   return (
     <>
-      <tr>
-        <td style={{ ...styles.schemaTd, paddingLeft: 8 + level * 16 }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid #F1F5F9', padding: '3px 0', alignItems: 'center', minHeight: 28, fontSize: 11 }}>
+        <div style={{ width: widths.path, flexShrink: 0, paddingLeft: 8 + level * 16, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
           <span style={{ color: '#64748B', marginRight: 4 }}>
             {level > 0 ? '└ ' : ''}
           </span>
-          {param.path.split('.').pop()}
-        </td>
-        <td style={styles.schemaTd}>
+          <code style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: '#1E40AF', background: '#EFF6FF', padding: '1px 4px', borderRadius: 3 }}>
+            {param.path.split('.').pop()}
+          </code>
+        </div>
+        <div style={{ width: widths.type, flexShrink: 0 }}>
           <span style={{
             display: 'inline-block',
             padding: '1px 6px',
@@ -421,26 +440,26 @@ function SchemaRow({
           }}>
             {param.type}
           </span>
-        </td>
-        <td style={styles.schemaTd}>
+        </div>
+        <div style={{ width: widths.required, flexShrink: 0, textAlign: 'center' }}>
           <input
             type="checkbox"
             checked={param.required}
             onChange={e => onUpdate(param.id, 'required', e.target.checked)}
             style={{ cursor: 'pointer' }}
           />
-        </td>
-        <td style={styles.schemaTd}>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <input
             style={styles.schemaDescInput}
             value={param.description}
             onChange={e => onUpdate(param.id, 'description', e.target.value)}
             placeholder="输入字段说明..."
           />
-        </td>
-      </tr>
+        </div>
+      </div>
       {param.children?.map(child => (
-        <SchemaRow key={child.id} param={child} onUpdate={onUpdate} level={level + 1} />
+        <SchemaRow key={child.id} param={child} onUpdate={onUpdate} level={level + 1} widths={widths} />
       ))}
     </>
   );
@@ -654,29 +673,6 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center' as const,
     fontSize: 12,
     color: '#94A3B8',
-  },
-  schemaTable: {
-    width: '100%',
-    borderCollapse: 'collapse' as const,
-    tableLayout: 'fixed' as const,
-  },
-  schemaTh: {
-    textAlign: 'left' as const,
-    padding: '5px 8px',
-    background: '#E9EEF6',
-    fontSize: 11,
-    fontWeight: 500,
-    color: '#64748B',
-    position: 'sticky' as const,
-    top: 0,
-    borderBottom: '1px solid #DBEAFE',
-  },
-  schemaTd: {
-    padding: '4px 8px',
-    borderBottom: '1px solid #F1F5F9',
-    fontSize: 12,
-    color: '#1E3A8A',
-    verticalAlign: 'middle' as const,
   },
   schemaDescInput: {
     width: '100%',

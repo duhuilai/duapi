@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApi } from '../store/ApiContext';
 
 const methodColors: Record<string, { bg: string; text: string }> = {
@@ -25,15 +25,40 @@ export default function Sidebar() {
 
   const groupInputRef = useRef<HTMLInputElement>(null);
   const epInputRef = useRef<HTMLInputElement>(null);
+  const searchMatchRef = useRef<HTMLDivElement>(null);
 
-  const filteredGroups = state.groups.map(group => ({
-    ...group,
-    endpoints: group.endpoints.filter(ep =>
+  // 搜索时自动展开匹配的分组并记录首个匹配项
+  let firstMatchId = '';
+  const filteredGroups = state.groups.map(group => {
+    const matched = group.endpoints.filter(ep =>
       state.searchQuery === '' ||
       ep.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
       ep.url.toLowerCase().includes(state.searchQuery.toLowerCase())
-    ),
-  }));
+    );
+    if (state.searchQuery && matched.length > 0 && !firstMatchId) {
+      firstMatchId = matched[0].id;
+    }
+    return { ...group, endpoints: matched };
+  });
+
+  // 搜索时自动展开匹配的分组并滚动到首个匹配项
+  useEffect(() => {
+    if (state.searchQuery) {
+      state.groups.forEach(group => {
+        const hasMatch = group.endpoints.some(ep =>
+          ep.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+          ep.url.toLowerCase().includes(state.searchQuery.toLowerCase())
+        );
+        if (hasMatch && group.collapsed) {
+          dispatch({ type: 'TOGGLE_GROUP', payload: group.id });
+        }
+      });
+      setTimeout(() => {
+        const el = document.querySelector('[data-search-match="true"]');
+        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, 120);
+    }
+  }, [state.searchQuery]);
 
   // ---- 分组重命名 ----
   const startEditGroup = (id: string, name: string) => {
@@ -99,20 +124,6 @@ export default function Sidebar() {
             style={styles.searchInput}
           />
         </div>
-      </div>
-
-      {/* Env selector */}
-      <div style={styles.envBar}>
-        <div style={{ ...styles.envDot, background: '#16A34A' }} />
-        <select
-          style={styles.envSelect}
-          value={state.activeEnvironmentId || ''}
-          onChange={e => dispatch({ type: 'SET_ENVIRONMENT', payload: e.target.value })}
-        >
-          {state.environments.map(env => (
-            <option key={env.id} value={env.id}>{env.name}</option>
-          ))}
-        </select>
       </div>
 
       {/* Group list */}
@@ -191,16 +202,23 @@ export default function Sidebar() {
             {/* Endpoint list */}
             {!group.collapsed && (
               <div style={styles.apiList}>
-                {group.endpoints.map(ep => {
+                {group.endpoints.map((ep, epi) => {
                   const mc = methodColors[ep.method] || methodColors.GET;
                   const isActive = state.activeEndpointId === ep.id;
                   const isHover = hoverEndpointId === ep.id;
+                  const isSearchMatch = ep.id === firstMatchId;
                   return (
                     <div
                       key={ep.id}
+                      data-search-match={isSearchMatch || undefined}
                       style={{
                         ...styles.apiItem,
-                        background: isActive ? '#DBEAFE' : isHover ? '#F0F7FF' : 'transparent',
+                        background: isActive ? '#DBEAFE'
+                          : isSearchMatch ? '#FEF3C7'
+                          : isHover ? '#F0F7FF'
+                          : 'transparent',
+                        outline: isSearchMatch ? '2px solid #F59E0B' : undefined,
+                        outlineOffset: -2,
                       }}
                       onClick={() => dispatch({ type: 'SELECT_ENDPOINT', payload: ep.id })}
                       onMouseEnter={() => setHoverEndpointId(ep.id)}
