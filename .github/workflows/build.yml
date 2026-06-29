@@ -108,6 +108,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
@@ -123,15 +128,21 @@ jobs:
       - name: List artifacts
         run: find ./artifacts -type f
 
+      - name: Extract tag message
+        run: |
+          echo "TAG_MSG<<EOF" >> $GITHUB_ENV
+          git tag -l --format='%(contents)' ${{ github.ref_name }} >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "duapi ${{ github.ref_name }}"
+          body: ${{ env.TAG_MSG }}
           draft: false
           prerelease: false
           files: |
             artifacts/mac/*
             artifacts/win/*
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
