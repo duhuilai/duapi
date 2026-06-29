@@ -29,11 +29,7 @@ jobs:
       - name: Build macOS package
         run: npx electron-builder --mac --publish never
         env:
-          # macOS 代码签名（可选 - 没有证书时跳过签名仍可构建）
-          # CSC_LINK: ${{ secrets.MAC_CERTS }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS artifacts

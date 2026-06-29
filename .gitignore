@@ -28,5 +28,8 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Dev scripts
+scripts/
+
 # WorkBuddy local AI memory (optional: remove if you want to track)
 .workbuddy/
