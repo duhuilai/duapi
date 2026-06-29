@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useApi } from '../store/ApiContext';
-import type { ExportFormat, ApiEndpoint, ApiGroup, ResponseParam } from '../types';
+import type { ExportFormat, ApiGroup, ResponseParam } from '../types';
+import WysiwygEditor from './WysiwygEditor';
+import { mdToHtml, htmlToMd } from '../utils/converters';
 
 const methodColors: Record<string, { bg: string; text: string }> = {
   GET: { bg: '#DCFCE7', text: '#16A34A' },
@@ -17,7 +19,7 @@ const formats: { key: ExportFormat; icon: string; name: string }[] = [
   { key: 'doc', icon: 'D', name: 'Word' },
 ];
 
-// ---- Markdown 生成器 ----
+// ── Markdown 生成器 ──
 
 function generateMarkdown(
   groups: ApiGroup[],
@@ -33,7 +35,7 @@ function generateMarkdown(
   lines.push('');
 
   const selectedGroups = groups.filter(g =>
-    g.endpoints.some(e => selectedEndpoints.includes(e.id))
+    g.endpoints.some(e => selectedEndpoints.includes(e.id)),
   );
 
   for (const group of selectedGroups) {
@@ -54,19 +56,19 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // 请求参数
       if (opts.includeParams && ep.params.length > 0) {
         lines.push('**请求参数**');
         lines.push('');
         lines.push('| 参数名 | 参数值 | 必填 | 描述 |');
         lines.push('|--------|--------|------|------|');
         for (const p of ep.params) {
-          lines.push(`| ${escapeMd(p.name)} | ${escapeMd(p.value)} | ${p.enabled ? '是' : '否'} | ${escapeMd(p.description)} |`);
+          lines.push(
+            `| ${escapeMd(p.name)} | ${escapeMd(p.value)} | ${p.enabled ? '是' : '否'} | ${escapeMd(p.description)} |`,
+          );
         }
         lines.push('');
       }
 
-      // 请求头
       if (ep.headers.length > 0) {
         lines.push('**请求头**');
         lines.push('');
@@ -78,7 +80,6 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // 请求示例
       if (opts.includeResponse && ep.body && ep.bodyType !== 'none') {
         lines.push('**请求示例**');
         lines.push('');
@@ -89,7 +90,6 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // 响应参数 Schema
       if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
         lines.push('**响应参数说明**');
         lines.push('');
@@ -110,7 +110,9 @@ function generateMarkdown(
 function renderSchemaRows(params: ResponseParam[], lines: string[], indent: string) {
   for (const p of params) {
     const displayPath = indent + p.path.split('.').pop()!;
-    lines.push(`| ${displayPath} | ${p.type} | ${p.required ? '是' : '否'} | ${escapeMd(p.description)} |`);
+    lines.push(
+      `| ${displayPath} | ${p.type} | ${p.required ? '是' : '否'} | ${escapeMd(p.description)} |`,
+    );
     if (p.children) {
       renderSchemaRows(p.children, lines, indent + '  ');
     }
@@ -121,94 +123,7 @@ function escapeMd(s: string): string {
   return s.replace(/\|/g, '\\|').replace(/\*/g, '\\*');
 }
 
-// ---- Markdown → HTML 转换 ----
-
-function mdToHtml(md: string): string {
-  const lines = md.split('\n');
-  let html = '';
-  let inTable = false;
-  let inCodeBlock = false;
-  let codeContent = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-
-    // Code block
-    if (line.startsWith('```')) {
-      if (inCodeBlock) {
-        html += `<pre><code>${escapeHtml(codeContent)}</code></pre>\n`;
-        codeContent = '';
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-      }
-      continue;
-    }
-    if (inCodeBlock) {
-      codeContent += (codeContent ? '\n' : '') + line;
-      continue;
-    }
-
-    // Table
-    if (line.startsWith('|')) {
-      if (!inTable) {
-        html += '<table>\n';
-        inTable = true;
-      }
-      const cells = line.split('|').filter(c => c.trim() !== '' || line.endsWith('|'));
-      const isHeader = i + 1 < lines.length && lines[i + 1].startsWith('|') && lines[i + 1].includes('---');
-      const tag = isHeader ? 'th' : 'td';
-      html += '<tr>';
-      for (const cell of cells) {
-        html += `<${tag}>${inlineMdToHtml(cell.trim())}</${tag}>`;
-      }
-      html += '</tr>\n';
-      if (isHeader) {
-        i++; // skip separator row
-      }
-      continue;
-    } else {
-      if (inTable) {
-        html += '</table>\n';
-        inTable = false;
-      }
-    }
-
-    // Headings
-    if (line.startsWith('### ')) {
-      html += `<h3>${inlineMdToHtml(line.slice(4))}</h3>\n`;
-    } else if (line.startsWith('## ')) {
-      html += `<h2>${inlineMdToHtml(line.slice(3))}</h2>\n`;
-    } else if (line.startsWith('# ')) {
-      html += `<h1>${inlineMdToHtml(line.slice(2))}</h1>\n`;
-    } else if (line.startsWith('> ')) {
-      html += `<blockquote>${inlineMdToHtml(line.slice(2))}</blockquote>\n`;
-    } else if (line.startsWith('---')) {
-      html += '<hr>\n';
-    } else if (line.trim() === '') {
-      html += '\n';
-    } else {
-      html += `<p>${inlineMdToHtml(line)}</p>\n`;
-    }
-  }
-
-  if (inTable) html += '</table>\n';
-  if (inCodeBlock && codeContent) {
-    html += `<pre><code>${escapeHtml(codeContent)}</code></pre>\n`;
-  }
-
-  return html;
-}
-
-function inlineMdToHtml(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`(.+?)`/g, '<code>$1</code>');
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// ── 包装完整 HTML 文档 ──
 
 function wrapFullHtml(body: string, title: string): string {
   return `<!DOCTYPE html>
@@ -237,7 +152,23 @@ ${body}
 </body></html>`;
 }
 
-// ---- ExportPage 组件 ----
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── 尝试检测 content 是 MD 还是 HTML，返回 HTML ──
+
+function ensureHtml(content: string): string {
+  if (!content) return '';
+  // 如果包含 HTML 标签则假定已是 HTML
+  if (/<[a-zA-Z][^>]*>/.test(content)) return content;
+  // 否则当作 MD 转换
+  return mdToHtml(content);
+}
+
+// ════════════════════════════════════════════
+//  ExportPage 组件
+// ════════════════════════════════════════════
 
 export default function ExportPage() {
   const { state, dispatch } = useApi();
@@ -246,8 +177,8 @@ export default function ExportPage() {
   const totalEndpoints = groups.reduce((sum, g) => sum + g.endpoints.length, 0);
   const selectedCount = exportConfig.selectedEndpoints.length;
 
-  // 编辑器本地缓存（每次生成时重置）
-  const [localContent, setLocalContent] = useState(state.exportContent);
+  // 编辑器内容（HTML 格式）
+  const [localHtml, setLocalHtml] = useState(() => ensureHtml(state.exportContent));
   const [activeFormat, setActiveFormat] = useState<ExportFormat>('html');
   const [includeSchema, setIncludeSchema] = useState(true);
   const [toast, setToast] = useState('');
@@ -257,7 +188,8 @@ export default function ExportPage() {
     setTimeout(() => setToast(''), 2000);
   };
 
-  // 生成文档
+  // ── 生成文档 ──
+
   const handleGenerate = () => {
     if (selectedCount === 0) {
       showToast('请先选择需要导出的接口');
@@ -268,25 +200,30 @@ export default function ExportPage() {
       includeResponse: exportConfig.includeResponse,
       includeSchema,
     });
-    setLocalContent(md);
-    dispatch({ type: 'SET_EXPORT_CONTENT', payload: md });
+    const html = mdToHtml(md);
+    setLocalHtml(html);
+    // 持久化保存 HTML
+    dispatch({ type: 'SET_EXPORT_CONTENT', payload: html });
     showToast('文档已生成，可编辑后导出');
   };
 
-  // 编辑器内容变更
-  const handleEditorChange = (val: string) => {
-    setLocalContent(val);
+  // ── 编辑器内容变更 ──
+
+  const handleEditorChange = (html: string) => {
+    setLocalHtml(html);
   };
 
-  // 保存到 store
+  // ── 保存 ──
+
   const handleSave = () => {
-    dispatch({ type: 'SET_EXPORT_CONTENT', payload: localContent });
+    dispatch({ type: 'SET_EXPORT_CONTENT', payload: localHtml });
     showToast('文档内容已保存');
   };
 
-  // 导出文档
+  // ── 导出 ──
+
   const handleExport = () => {
-    if (!localContent.trim()) {
+    if (!localHtml || localHtml === '<br>') {
       showToast('请先生成或编辑文档内容');
       return;
     }
@@ -294,16 +231,16 @@ export default function ExportPage() {
     const now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
     if (activeFormat === 'md') {
-      downloadFile(`api-doc-${now}.md`, localContent, 'text/markdown');
+      // HTML → Markdown
+      const md = htmlToMd(localHtml);
+      downloadFile(`api-doc-${now}.md`, md, 'text/markdown');
       showToast('Markdown 文档已下载');
     } else if (activeFormat === 'html') {
-      const body = mdToHtml(localContent);
-      const full = wrapFullHtml(body, 'API 接口文档');
+      const full = wrapFullHtml(localHtml, 'API 接口文档');
       downloadFile(`api-doc-${now}.html`, full, 'text/html');
       showToast('HTML 文档已下载');
     } else if (activeFormat === 'pdf') {
-      const body = mdToHtml(localContent);
-      const full = wrapFullHtml(body, 'API 接口文档');
+      const full = wrapFullHtml(localHtml, 'API 接口文档');
       const w = window.open('', '_blank');
       if (w) {
         w.document.write(full);
@@ -313,7 +250,6 @@ export default function ExportPage() {
         showToast('弹窗被拦截，请允许弹窗后重试');
       }
     } else if (activeFormat === 'doc') {
-      const body = mdToHtml(localContent);
       const docHtml = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
 <head>
@@ -333,7 +269,7 @@ export default function ExportPage() {
   hr { border: none; border-top: 1px solid #DBEAFE; }
 </style>
 </head><body>
-${body}
+${localHtml}
 </body></html>`;
       downloadFile(`api-doc-${now}.doc`, docHtml, 'application/msword');
       showToast('Word 文档已下载');
@@ -349,8 +285,12 @@ ${body}
           <div style={styles.sidebarSub}>勾选需要导出的接口或分组</div>
         </div>
         <div style={styles.sidebarActions}>
-          <button style={styles.actionBtnPrimary} onClick={() => dispatch({ type: 'SELECT_ALL_EXPORT' })}>全选</button>
-          <button style={styles.actionBtnSecondary} onClick={() => dispatch({ type: 'DESELECT_ALL_EXPORT' })}>取消</button>
+          <button style={styles.actionBtnPrimary} onClick={() => dispatch({ type: 'SELECT_ALL_EXPORT' })}>
+            全选
+          </button>
+          <button style={styles.actionBtnSecondary} onClick={() => dispatch({ type: 'DESELECT_ALL_EXPORT' })}>
+            取消
+          </button>
         </div>
         <div style={styles.sidebarContent}>
           {groups.map(group => {
@@ -358,15 +298,24 @@ ${body}
             const someSelected = group.endpoints.some(e => exportConfig.selectedEndpoints.includes(e.id));
             return (
               <div key={group.id} style={styles.group}>
-                <div style={styles.groupHeader} onClick={() => dispatch({ type: 'TOGGLE_EXPORT_GROUP', payload: group.id })}>
-                  <span style={{
-                    ...styles.arrow,
-                    transform: group.collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                  }}>▼</span>
+                <div
+                  style={styles.groupHeader}
+                  onClick={() => dispatch({ type: 'TOGGLE_EXPORT_GROUP', payload: group.id })}
+                >
+                  <span
+                    style={{
+                      ...styles.arrow,
+                      transform: group.collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    }}
+                  >
+                    ▼
+                  </span>
                   <input
                     type="checkbox"
                     checked={allSelected}
-                    ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    ref={el => {
+                      if (el) el.indeterminate = someSelected && !allSelected;
+                    }}
                     onChange={e => {
                       e.stopPropagation();
                       dispatch({ type: 'TOGGLE_EXPORT_GROUP', payload: group.id });
@@ -385,10 +334,17 @@ ${body}
                         <div
                           key={ep.id}
                           style={styles.apiItem}
-                          onClick={() => dispatch({ type: 'TOGGLE_EXPORT_ENDPOINT', payload: { endpointId: ep.id, groupId: group.id } })}
+                          onClick={() =>
+                            dispatch({
+                              type: 'TOGGLE_EXPORT_ENDPOINT',
+                              payload: { endpointId: ep.id, groupId: group.id },
+                            })
+                          }
                         >
                           <input type="checkbox" checked={selected} onChange={() => {}} style={{ marginRight: 6 }} />
-                          <span style={{ ...styles.methodBadge, background: mc.bg, color: mc.text }}>{ep.method}</span>
+                          <span style={{ ...styles.methodBadge, background: mc.bg, color: mc.text }}>
+                            {ep.method}
+                          </span>
                           <span style={styles.apiName}>{ep.name}</span>
                         </div>
                       );
@@ -403,7 +359,7 @@ ${body}
 
       {/* ── 右侧：配置 + 编辑 + 导出 ── */}
       <main style={styles.main}>
-        {/* 顶栏：格式选择 + 内容选项 + 生成按钮 */}
+        {/* 顶栏 */}
         <div style={styles.toolbar}>
           <div style={styles.toolbarRow}>
             <div style={styles.toolbarLeft}>
@@ -427,27 +383,29 @@ ${body}
             </div>
 
             <div style={styles.toolbarRight}>
-              {/* 快速选项 */}
               <label style={styles.checkLabel}>
                 <input
                   type="checkbox"
                   checked={exportConfig.includeParams}
                   onChange={() => dispatch({ type: 'TOGGLE_EXPORT_OPTION', payload: 'includeParams' })}
-                /> 请求参数
+                />{' '}
+                请求参数
               </label>
               <label style={styles.checkLabel}>
                 <input
                   type="checkbox"
                   checked={exportConfig.includeResponse}
                   onChange={() => dispatch({ type: 'TOGGLE_EXPORT_OPTION', payload: 'includeResponse' })}
-                /> 请求示例
+                />{' '}
+                请求示例
               </label>
               <label style={styles.checkLabel}>
                 <input
                   type="checkbox"
                   checked={includeSchema}
                   onChange={() => setIncludeSchema(!includeSchema)}
-                /> Schema
+                />{' '}
+                Schema
               </label>
 
               <button style={styles.generateBtn} onClick={handleGenerate}>
@@ -461,31 +419,29 @@ ${body}
         <div style={styles.editorArea}>
           <div style={styles.editorHeader}>
             <span style={{ fontSize: 12, color: '#64748B' }}>
-              已选 {selectedCount}/{totalEndpoints} 个接口 — 可直接编辑下方 Markdown 内容
+              已选 {selectedCount}/{totalEndpoints} 个接口 — 所见即所得编辑，完成后导出
             </span>
           </div>
-          <textarea
-            style={styles.editor}
-            value={localContent}
-            onChange={e => handleEditorChange(e.target.value)}
-            placeholder={'点击"生成文档"按钮，从所选接口自动生成 Markdown 格式的 API 文档。\n\n生成后可直接在此编辑文档内容，编辑完成后点击"保存"保存内容，或点击"导出"下载为指定格式文件。'}
-            spellCheck={false}
+          <WysiwygEditor
+            value={localHtml}
+            onChange={handleEditorChange}
+            placeholder="点击「生成文档」按钮，从所选接口自动生成可编辑的 API 文档。&#10;生成后可直接在此富文本编辑，完成后点击保存或导出。"
           />
         </div>
 
         {/* 底部操作栏 */}
         <div style={styles.footer}>
           <span style={{ fontSize: 12, color: '#64748B' }}>
-            {localContent ? `${localContent.length} 字符` : '尚未生成文档'}
+            {localHtml ? `${localHtml.length} 字符` : '尚未生成文档'}
           </span>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button style={styles.footerBtn} onClick={handleSave} disabled={!localContent}>
+            <button style={styles.footerBtn} onClick={handleSave} disabled={!localHtml}>
               💾 保存
             </button>
             <button
               style={{ ...styles.footerBtn, background: '#1E40AF', color: 'white', borderColor: '#1E40AF' }}
               onClick={handleExport}
-              disabled={!localContent}
+              disabled={!localHtml}
             >
               📥 导出 {activeFormat.toUpperCase()}
             </button>
@@ -493,10 +449,8 @@ ${body}
         </div>
       </main>
 
-      {/* Toast 提示 */}
-      {toast && (
-        <div style={styles.toast}>{toast}</div>
-      )}
+      {/* Toast */}
+      {toast && <div style={styles.toast}>{toast}</div>}
     </div>
   );
 }
@@ -526,7 +480,6 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
   },
 
-  // Sidebar
   sidebar: {
     width: 260,
     minWidth: 260,
@@ -535,247 +488,69 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
   },
-  sidebarHeader: {
-    padding: 16,
-    borderBottom: '1px solid #DBEAFE',
-  },
-  sidebarTitle: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: '#1E3A8A',
-    marginBottom: 4,
-  },
-  sidebarSub: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  sidebarActions: {
-    display: 'flex',
-    gap: 6,
-    padding: 8,
-    borderBottom: '1px solid #DBEAFE',
-  },
+  sidebarHeader: { padding: 16, borderBottom: '1px solid #DBEAFE' },
+  sidebarTitle: { fontSize: 16, fontWeight: 700, color: '#1E3A8A', marginBottom: 4 },
+  sidebarSub: { fontSize: 12, color: '#64748B' },
+  sidebarActions: { display: 'flex', gap: 6, padding: 8, borderBottom: '1px solid #DBEAFE' },
   actionBtnPrimary: {
-    flex: 1,
-    height: 24,
-    borderRadius: 4,
-    border: 'none',
-    fontSize: 11,
-    cursor: 'pointer',
-    background: '#DBEAFE',
-    color: '#1E40AF',
-    fontWeight: 500,
-    fontFamily: 'inherit',
+    flex: 1, height: 24, borderRadius: 4, border: 'none', fontSize: 11, cursor: 'pointer',
+    background: '#DBEAFE', color: '#1E40AF', fontWeight: 500, fontFamily: 'inherit',
   },
   actionBtnSecondary: {
-    flex: 1,
-    height: 24,
-    borderRadius: 4,
-    border: 'none',
-    fontSize: 11,
-    cursor: 'pointer',
-    background: 'transparent',
-    color: '#64748B',
-    fontFamily: 'inherit',
+    flex: 1, height: 24, borderRadius: 4, border: 'none', fontSize: 11, cursor: 'pointer',
+    background: 'transparent', color: '#64748B', fontFamily: 'inherit',
   },
-  sidebarContent: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: 4,
-  },
+  sidebarContent: { flex: 1, overflowY: 'auto', padding: 4 },
   group: { marginBottom: 2 },
-  groupHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: 6,
-    cursor: 'pointer',
-    borderRadius: 4,
-  },
-  arrow: {
-    fontSize: 10,
-    color: '#64748B',
-    transition: 'transform 0.2s',
-    display: 'inline-block',
-  },
+  groupHeader: { display: 'flex', alignItems: 'center', gap: 4, padding: 6, cursor: 'pointer', borderRadius: 4 },
+  arrow: { fontSize: 10, color: '#64748B', transition: 'transform 0.2s', display: 'inline-block' },
   groupIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 10,
-    fontWeight: 700,
-    color: 'white',
+    width: 18, height: 18, borderRadius: 4, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'white',
   },
-  groupName: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: '#1E3A8A',
-  },
+  groupName: { fontSize: 12, fontWeight: 500, color: '#1E3A8A' },
   apiList: { paddingLeft: 30 },
-  apiItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '4px 8px',
-    borderRadius: 4,
-    cursor: 'pointer',
-  },
+  apiItem: { display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 4, cursor: 'pointer' },
   methodBadge: {
-    width: 42,
-    height: 18,
-    borderRadius: 3,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 10,
-    fontWeight: 600,
-    flexShrink: 0,
+    width: 42, height: 18, borderRadius: 3, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', fontSize: 10, fontWeight: 600, flexShrink: 0,
   },
-  apiName: {
-    fontSize: 12,
-    color: '#1E3A8A',
-  },
+  apiName: { fontSize: 12, color: '#1E3A8A' },
 
-  // Main
-  main: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-  },
-
-  // Toolbar
-  toolbar: {
-    background: '#FFFFFF',
-    borderBottom: '1px solid #DBEAFE',
-    padding: '10px 16px',
-  },
-  toolbarRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  toolbarLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toolbarLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: 500,
-    flexShrink: 0,
-  },
-  formatTabs: {
-    display: 'flex',
-    gap: 4,
-  },
+  main: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
+  toolbar: { background: '#FFFFFF', borderBottom: '1px solid #DBEAFE', padding: '10px 16px' },
+  toolbarRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  toolbarLeft: { display: 'flex', alignItems: 'center', gap: 8 },
+  toolbarLabel: { fontSize: 12, color: '#64748B', fontWeight: 500, flexShrink: 0 },
+  formatTabs: { display: 'flex', gap: 4 },
   formatTab: {
-    padding: '4px 12px',
-    borderRadius: 5,
-    border: '1px solid #DBEAFE',
-    fontSize: 12,
-    fontWeight: 500,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'all 0.15s',
+    padding: '4px 12px', borderRadius: 5, border: '1px solid #DBEAFE',
+    fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
   },
-  toolbarRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  checkLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    fontSize: 12,
-    color: '#1E3A8A',
-    cursor: 'pointer',
-    userSelect: 'none',
-  },
+  toolbarRight: { display: 'flex', alignItems: 'center', gap: 12 },
+  checkLabel: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1E3A8A', cursor: 'pointer', userSelect: 'none' },
   generateBtn: {
-    padding: '5px 14px',
-    borderRadius: 6,
-    border: 'none',
-    background: '#EFF6FF',
-    color: '#1E40AF',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
+    padding: '5px 14px', borderRadius: 6, border: 'none', background: '#EFF6FF',
+    color: '#1E40AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
   },
 
-  // Editor
-  editorArea: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    minHeight: 0,
-    padding: '0 16px',
-  },
-  editorHeader: {
-    padding: '8px 0',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  editor: {
-    flex: 1,
-    width: '100%',
-    border: '1px solid #DBEAFE',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 13,
-    fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
-    color: '#1E3A8A',
-    background: '#FFFFFF',
-    resize: 'none' as const,
-    outline: 'none',
-    lineHeight: 1.7,
-    minHeight: 0,
-  },
+  editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 16px' },
+  editorHeader: { padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
 
-  // Footer
   footer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    borderTop: '1px solid #DBEAFE',
-    background: '#FFFFFF',
-    marginTop: 4,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: 12, borderTop: '1px solid #DBEAFE', background: '#FFFFFF', marginTop: 4,
   },
   footerBtn: {
-    height: 36,
-    padding: '0 20px',
-    borderRadius: 8,
-    border: '1px solid #DBEAFE',
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: 'pointer',
-    background: '#E9EEF6',
-    color: '#1E3A8A',
-    fontFamily: 'inherit',
+    height: 36, padding: '0 20px', borderRadius: 8, border: '1px solid #DBEAFE',
+    fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#E9EEF6',
+    color: '#1E3A8A', fontFamily: 'inherit',
   },
 
-  // Toast
   toast: {
-    position: 'fixed',
-    bottom: 32,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    background: '#1E3A8A',
-    color: '#fff',
-    padding: '10px 24px',
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 500,
-    zIndex: 9999,
+    position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)',
+    background: '#1E3A8A', color: '#fff', padding: '10px 24px', borderRadius: 8,
+    fontSize: 13, fontWeight: 500, zIndex: 9999,
     boxShadow: '0 4px 20px rgba(30, 64, 175, 0.3)',
-    animation: 'fadeIn 0.2s ease',
   },
 };
