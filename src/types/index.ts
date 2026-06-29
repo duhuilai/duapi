@@ -56,6 +56,16 @@ export interface ApiEndpoint {
   description: string;
   responseParams: ResponseParam[];
   bodyParams: ResponseParam[];
+  errorCodes: ErrorCode[];
+}
+
+// 错误码定义
+export interface ErrorCode {
+  id: string;
+  code: string;         // 错误码，如 "1001"、"AUTH_EXPIRED"
+  httpStatus: number;   // HTTP 状态码，如 401, 403, 500
+  message: string;      // 错误信息，如 "Token已过期"
+  description: string;  // 详细说明及处理建议
 }
 
 // API 分组

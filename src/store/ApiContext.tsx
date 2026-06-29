@@ -2,7 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import type {
   AppState, ApiGroup, ApiEndpoint, HttpMethod,
   UrlParam, RequestHeader, AuthType, AuthConfig,
-  Environment, ApiResponse, ExportFormat, ResponseParam,
+  Environment, ApiResponse, ExportFormat, ResponseParam, ErrorCode,
 } from '../types';
 import { loadData, saveData, generateId } from '../utils/storage';
 
@@ -70,6 +70,7 @@ const defaultGroups: ApiGroup[] = [
         description: '根据用户ID获取用户详细信息',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
       {
         id: 'api-create-user',
@@ -89,6 +90,7 @@ const defaultGroups: ApiGroup[] = [
         description: '创建新用户',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
       {
         id: 'api-update-user',
@@ -110,6 +112,7 @@ const defaultGroups: ApiGroup[] = [
         description: '更新用户信息',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
       {
         id: 'api-delete-user',
@@ -130,6 +133,7 @@ const defaultGroups: ApiGroup[] = [
         description: '删除指定用户',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
     ],
   },
@@ -158,6 +162,7 @@ const defaultGroups: ApiGroup[] = [
         description: '创建新订单',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
       {
         id: 'api-list-orders',
@@ -180,6 +185,7 @@ const defaultGroups: ApiGroup[] = [
         description: '分页查询订单列表',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
     ],
   },
@@ -208,6 +214,7 @@ const defaultGroups: ApiGroup[] = [
         description: '发起支付请求',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
       {
         id: 'api-query-payment',
@@ -228,6 +235,7 @@ const defaultGroups: ApiGroup[] = [
         description: '查询支付结果',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       },
     ],
   },
@@ -372,7 +380,10 @@ type Action =
   | { type: 'UPDATE_RESPONSE_PARAM'; payload: { paramId: string; field: string; value: string | boolean } }
   | { type: 'SET_EXPORT_CONTENT'; payload: string }
   | { type: 'GENERATE_BODY_PARAMS' }
-  | { type: 'UPDATE_BODY_PARAM'; payload: { paramId: string; field: string; value: string | boolean } };
+  | { type: 'UPDATE_BODY_PARAM'; payload: { paramId: string; field: string; value: string | boolean } }
+  | { type: 'ADD_ERROR_CODE' }
+  | { type: 'UPDATE_ERROR_CODE'; payload: { codeId: string; field: string; value: string | number } }
+  | { type: 'DELETE_ERROR_CODE'; payload: string };
 
 // ---- Reducer ----
 
@@ -640,6 +651,7 @@ function reducer(state: AppState, action: Action): AppState {
         description: '',
         responseParams: [],
         bodyParams: [],
+        errorCodes: [],
       };
       const newGroups = state.groups.map(g =>
         g.id === gid ? { ...g, collapsed: false, endpoints: [...g.endpoints, newEp] } : g
@@ -719,6 +731,7 @@ function reducer(state: AppState, action: Action): AppState {
                 testScript: request.testScript,
                 description: request.description,
                 bodyParams: e.bodyParams,
+                errorCodes: e.errorCodes,
               }
             : e
         ),
@@ -798,6 +811,61 @@ function reducer(state: AppState, action: Action): AppState {
         ...g,
         endpoints: g.endpoints.map(e =>
           e.id === activeEndpointId ? { ...e, bodyParams: updateParam(e.bodyParams) } : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    // ---- 错误码管理 ----
+    case 'ADD_ERROR_CODE': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const newCode: ErrorCode = {
+        id: generateId(),
+        code: '',
+        httpStatus: 400,
+        message: '',
+        description: '',
+      };
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, errorCodes: [...e.errorCodes, newCode] } : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'UPDATE_ERROR_CODE': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId
+            ? {
+                ...e,
+                errorCodes: e.errorCodes.map(c =>
+                  c.id === action.payload.codeId
+                    ? { ...c, [action.payload.field]: action.payload.value }
+                    : c
+                ),
+              }
+            : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'DELETE_ERROR_CODE': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId
+            ? { ...e, errorCodes: e.errorCodes.filter(c => c.id !== action.payload) }
+            : e
         ),
       }));
       return { ...state, groups: newGroups };

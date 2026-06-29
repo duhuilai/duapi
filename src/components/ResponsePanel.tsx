@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApi } from '../store/ApiContext';
-import type { ResponseParam } from '../types';
+import type { ResponseParam, ErrorCode } from '../types';
 
 type RespTab = 'body' | 'headers' | 'cookies' | 'schema';
 
@@ -15,6 +15,7 @@ export default function ResponsePanel() {
   );
 
   const responseParams = activeEndpoint?.responseParams ?? [];
+  const errorCodes = activeEndpoint?.errorCodes ?? [];
 
   const statusColor = useMemo(() => {
     if (!response) return '#64748B';
@@ -50,6 +51,20 @@ export default function ResponsePanel() {
 
   const handleUpdateParam = (paramId: string, field: string, value: string | boolean) => {
     dispatch({ type: 'UPDATE_RESPONSE_PARAM', payload: { paramId, field, value } });
+  };
+
+  const handleAddErrorCode = () => {
+    dispatch({ type: 'ADD_ERROR_CODE' });
+  };
+
+  const handleUpdateErrorCode = (codeId: string, field: string, value: string | number) => {
+    dispatch({ type: 'UPDATE_ERROR_CODE', payload: { codeId, field, value } });
+  };
+
+  const handleDeleteErrorCode = (codeId: string) => {
+    if (confirm('确定删除此错误码？')) {
+      dispatch({ type: 'DELETE_ERROR_CODE', payload: codeId });
+    }
   };
 
   const renderParamRows = (params: ResponseParam[], depth = 0): React.ReactNode[] => {
@@ -187,11 +202,89 @@ export default function ResponsePanel() {
                   <span style={{ ...schemaCell('required'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>必填</span>
                   <span style={{ ...schemaCell('desc'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>说明</span>
                 </div>
-                <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                <div style={{ flex: '0 0 auto', maxHeight: 200, overflow: 'auto', minHeight: 0 }}>
                   {renderParamRows(responseParams)}
                 </div>
               </>
             )}
+
+            {/* 错误码说明 */}
+            <div style={{ marginTop: responseParams.length > 0 ? 16 : 0 }}>
+              <div style={ecSectionHeader}>
+                <span style={{ fontWeight: 600, fontSize: 12, color: '#1E3A8A' }}>⚠ 错误码说明</span>
+                <button style={ecAddBtn} onClick={handleAddErrorCode}>
+                  ＋ 添加错误码
+                </button>
+              </div>
+
+              {errorCodes.length === 0 && (
+                <div style={styles.emptyTip}>
+                  暂无错误码，点击「添加错误码」管理 API 异常返回
+                </div>
+              )}
+
+              {errorCodes.length > 0 && (
+                <>
+                  <div style={ecTableHeader}>
+                    <span style={ecCell('code')}>错误码</span>
+                    <span style={ecCell('http')}>HTTP</span>
+                    <span style={ecCell('msg')}>错误信息</span>
+                    <span style={ecCell('desc')}>说明</span>
+                    <span style={ecCell('act')}></span>
+                  </div>
+                  <div style={{ maxHeight: 220, overflow: 'auto' }}>
+                    {errorCodes.map(ec => (
+                      <div key={ec.id} style={ecRow}>
+                        <div style={ecCell('code')}>
+                          <input
+                            style={ecInput}
+                            value={ec.code}
+                            onChange={e => handleUpdateErrorCode(ec.id, 'code', e.target.value)}
+                            placeholder="如 1001"
+                          />
+                        </div>
+                        <div style={ecCell('http')}>
+                          <select
+                            style={ecSelect}
+                            value={ec.httpStatus}
+                            onChange={e => handleUpdateErrorCode(ec.id, 'httpStatus', Number(e.target.value))}
+                          >
+                            {[400, 401, 403, 404, 405, 408, 409, 422, 429, 500, 502, 503, 504].map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div style={ecCell('msg')}>
+                          <input
+                            style={ecInput}
+                            value={ec.message}
+                            onChange={e => handleUpdateErrorCode(ec.id, 'message', e.target.value)}
+                            placeholder="如 Token已过期"
+                          />
+                        </div>
+                        <div style={ecCell('desc')}>
+                          <input
+                            style={ecInput}
+                            value={ec.description}
+                            onChange={e => handleUpdateErrorCode(ec.id, 'description', e.target.value)}
+                            placeholder="详细说明及处理建议"
+                          />
+                        </div>
+                        <div style={ecCell('act')}>
+                          <button
+                            style={ecDelBtn}
+                            onClick={() => handleDeleteErrorCode(ec.id)}
+                            title="删除"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -410,4 +503,90 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     flexWrap: 'wrap' as const,
   },
+};
+
+// ---- Error Code Styles ----
+
+const ecSectionHeader: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 6,
+  paddingBottom: 6,
+  borderBottom: '2px solid #DBEAFE',
+};
+
+const ecAddBtn: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 500,
+  color: '#1E40AF',
+  background: '#EFF6FF',
+  border: '1px solid #DBEAFE',
+  borderRadius: 4,
+  padding: '2px 8px',
+  cursor: 'pointer',
+};
+
+const ecTableHeader: React.CSSProperties = {
+  display: 'flex',
+  borderBottom: '1px solid #DBEAFE',
+  padding: '3px 0',
+  marginBottom: 2,
+};
+
+const ecCell = (kind: 'code' | 'http' | 'msg' | 'desc' | 'act'): React.CSSProperties => ({
+  ...({
+    code: { width: 80, flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
+    http: { width: 60, flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
+    msg: { flex: 2, minWidth: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
+    desc: { flex: 3, minWidth: 0, fontSize: 11, fontWeight: 600, color: '#64748B', padding: '0 4px' },
+    act: { width: 28, flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#64748B' },
+  }[kind]),
+});
+
+const ecRow: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  borderBottom: '1px solid #F1F5F9',
+  padding: '2px 0',
+  minHeight: 28,
+};
+
+const ecInput: React.CSSProperties = {
+  width: '100%',
+  height: 24,
+  border: '1px solid #E2E8F0',
+  borderRadius: 3,
+  padding: '0 4px',
+  fontSize: 11,
+  color: '#1E3A8A',
+  outline: 'none',
+  background: '#FFFFFF',
+};
+
+const ecSelect: React.CSSProperties = {
+  width: '100%',
+  height: 24,
+  border: '1px solid #E2E8F0',
+  borderRadius: 3,
+  padding: '0 2px',
+  fontSize: 11,
+  color: '#1E3A8A',
+  outline: 'none',
+  background: '#FFFFFF',
+  cursor: 'pointer',
+};
+
+const ecDelBtn: React.CSSProperties = {
+  width: 24,
+  height: 24,
+  border: 'none',
+  borderRadius: 3,
+  fontSize: 11,
+  color: '#DC2626',
+  background: '#FEF2F2',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };

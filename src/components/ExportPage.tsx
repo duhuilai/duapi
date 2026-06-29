@@ -110,6 +110,20 @@ function generateMarkdown(
         lines.push('');
       }
 
+      // 错误码说明
+      if (opts.includeErrors && ep.errorCodes && ep.errorCodes.length > 0) {
+        lines.push('**错误码说明**');
+        lines.push('');
+        lines.push('| 错误码 | HTTP 状态码 | 错误信息 | 说明 |');
+        lines.push('|--------|------------|----------|------|');
+        for (const ec of ep.errorCodes) {
+          lines.push(
+            `| ${escapeMd(ec.code)} | ${ec.httpStatus} | ${escapeMd(ec.message)} | ${escapeMd(ec.description)} |`,
+          );
+        }
+        lines.push('');
+      }
+
       lines.push('---');
       lines.push('');
     }
