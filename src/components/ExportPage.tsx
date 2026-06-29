@@ -19,7 +19,11 @@ const formats: { key: ExportFormat; icon: string; name: string }[] = [
   { key: 'doc', icon: 'D', name: 'Word' },
 ];
 
-// ── Markdown 生成器 ──
+// ── Markdown 生成器（严格按模板格式）──
+
+function bodyTypeLabel(bt: string): string {
+  return bt === 'json' ? 'JSON' : bt === 'form' ? 'Form' : bt === 'raw' ? 'Raw' : '无';
+}
 
 function generateMarkdown(
   groups: ApiGroup[],
@@ -27,14 +31,6 @@ function generateMarkdown(
   opts: { includeParams: boolean; includeResponse: boolean; includeSchema: boolean; includeErrors: boolean },
 ): string {
   const lines: string[] = [];
-  const now = new Date().toLocaleString('zh-CN');
-
-  lines.push('# API 接口文档');
-  lines.push('');
-  lines.push(`> 生成时间: ${now} | 共 ${selectedEndpoints.length} 个接口`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
 
   const selectedGroups = groups.filter(g =>
     g.endpoints.some(e => selectedEndpoints.includes(e.id)),
@@ -44,52 +40,50 @@ function generateMarkdown(
     const eps = group.endpoints.filter(e => selectedEndpoints.includes(e.id));
     if (eps.length === 0) continue;
 
-    lines.push(`## ${escapeMd(group.name)}`);
+    // ── 以分组名作为一级标题 ──
+    lines.push(`# ${escapeMd(group.name)}`);
     lines.push('');
 
     for (const ep of eps) {
-      // ── 接口标题 + 描述 ──
-      lines.push(`### ${escapeMd(ep.name)}`);
+      // ── 接口说明 ──
+      lines.push('## 接口说明：');
+      lines.push('');
+      lines.push(ep.description || '（无）');
       lines.push('');
 
-      if (ep.description) {
-        lines.push(escapeMd(ep.description));
-        lines.push('');
-      }
+      // ── 接口请求地址 ──
+      lines.push('## 接口请求地址：');
+      lines.push('');
+      lines.push(escapeMd(ep.url));
+      lines.push('');
 
-      // ── 请求地址 ──
-      lines.push(`> **接口地址：** \`${ep.method}\` ${escapeMd(ep.url)}`);
+      // ── 请求方式 ──
+      lines.push('## 请求方式:');
+      lines.push('');
+      lines.push(ep.method);
+      lines.push('');
+
+      // ── 参数类型 ──
+      lines.push('## 参数类型：');
+      lines.push('');
+      lines.push(bodyTypeLabel(ep.bodyType));
       lines.push('');
 
       // ── 请求头 ──
       if (ep.headers.length > 0) {
-        lines.push('**请求头**');
+        lines.push('## 请求头：');
         lines.push('');
-        lines.push('| 参数名 | 参数值 | 说明 |');
-        lines.push('|--------|--------|------|');
+        lines.push('| 请求头 | 请求内容 | 说明 |');
+        lines.push('|--------|----------|------|');
         for (const h of ep.headers) {
           lines.push(`| ${escapeMd(h.key)} | ${escapeMd(h.value)} | ${escapeMd(h.description)} |`);
         }
         lines.push('');
       }
 
-      // ── 请求参数 ──
-      if (opts.includeParams && ep.params.length > 0) {
-        lines.push('**请求参数**');
-        lines.push('');
-        lines.push('| 参数名 | 默认值 | 必填 | 说明 |');
-        lines.push('|--------|--------|------|------|');
-        for (const p of ep.params) {
-          lines.push(
-            `| ${escapeMd(p.name)} | ${escapeMd(p.value)} | ${p.enabled ? '是' : '否'} | ${escapeMd(p.description)} |`,
-          );
-        }
-        lines.push('');
-      }
-
       // ── 请求示例 ──
       if (opts.includeResponse && ep.body && ep.bodyType !== 'none') {
-        lines.push('**请求示例**');
+        lines.push('## 请求示例：');
         lines.push('');
         const lang = ep.bodyType === 'json' ? 'json' : '';
         lines.push('```' + lang);
@@ -98,19 +92,68 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // ── 请求体参数 Schema ──
-      if (opts.includeSchema && ep.bodyParams && ep.bodyParams.length > 0) {
-        lines.push('**请求体参数说明**');
+      // ── 请求参数说明 ──
+      const hasBodyParams = opts.includeSchema && ep.bodyParams && ep.bodyParams.length > 0;
+      const hasUrlParams = opts.includeParams && ep.params.length > 0;
+
+      if (hasBodyParams || hasUrlParams) {
+        lines.push('## 请求参数说明：');
         lines.push('');
-        lines.push('| 字段路径 | 类型 | 必填 | 说明 |');
-        lines.push('|----------|------|------|------|');
-        renderSchemaRows(ep.bodyParams, lines, '');
+        lines.push('| 字段名 | 字段说明 | 字段类型 | 是否必填 |');
+        lines.push('|--------|----------|----------|----------|');
+
+        // 优先 Body Schema 参数
+        if (hasBodyParams) {
+          renderBodyParamRows(ep.bodyParams!, lines, '');
+        } else if (hasUrlParams) {
+          for (const p of ep.params) {
+            lines.push(
+              `| ${escapeMd(p.name)} | ${escapeMd(p.description)} | string | ${p.enabled ? '是' : '否'} |`,
+            );
+          }
+        }
         lines.push('');
       }
 
-      // ── 响应参数 Schema ──
+      // ── 响应示例 ──
+      if (ep.responseExample) {
+        lines.push('## 响应示例');
+        lines.push('');
+        // 尝试解析是否为成功/失败格式的 JSON
+        let successEx = ep.responseExample;
+        let failureEx = '';
+        try {
+          const parsed = JSON.parse(ep.responseExample);
+          if (parsed.success !== undefined) {
+            successEx = JSON.stringify(parsed.success, null, 2);
+          }
+          if (parsed.failure !== undefined) {
+            failureEx = JSON.stringify(parsed.failure, null, 2);
+          }
+        } catch {
+          // 不是 JSON 对象格式，直接当作成功示例
+        }
+
+        lines.push('### 成功响应编码：');
+        lines.push('');
+        lines.push('```json');
+        lines.push(successEx);
+        lines.push('```');
+        lines.push('');
+
+        if (failureEx) {
+          lines.push('### 失败响应编码：');
+          lines.push('');
+          lines.push('```json');
+          lines.push(failureEx);
+          lines.push('```');
+          lines.push('');
+        }
+      }
+
+      // ── 响应成功参数说明 ──
       if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
-        lines.push('**响应参数说明**');
+        lines.push('## 响应成功参数说明：');
         lines.push('');
         lines.push('| 字段路径 | 类型 | 必填 | 说明 |');
         lines.push('|----------|------|------|------|');
@@ -118,36 +161,40 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // ── 返回结果示例 ──
-      if (ep.responseExample) {
-        lines.push('**返回结果示例**');
-        lines.push('');
-        lines.push('```json');
-        lines.push(ep.responseExample);
-        lines.push('```');
-        lines.push('');
-      }
-
-      // ── 错误码 ──
+      // ── 响应错误码说明 ──
       if (opts.includeErrors && ep.errorCodes && ep.errorCodes.length > 0) {
-        lines.push('**错误码说明**');
+        lines.push('## 响应错误码说明：');
         lines.push('');
-        lines.push('| 错误码 | HTTP 状态码 | 错误信息 | 说明 |');
-        lines.push('|--------|------------|----------|------|');
+        lines.push('| 接口返回码 | 接口返回描述 |');
+        lines.push('|------------|--------------|');
         for (const ec of ep.errorCodes) {
-          lines.push(
-            `| ${escapeMd(ec.code)} | ${ec.httpStatus} | ${escapeMd(ec.message)} | ${escapeMd(ec.description)} |`,
-          );
+          lines.push(`| ${escapeMd(ec.code)} | ${escapeMd(ec.message)} |`);
         }
         lines.push('');
       }
 
-      lines.push('---');
-      lines.push('');
+      // 接口之间用分隔线隔开
+      if (eps.indexOf(ep) < eps.length - 1) {
+        lines.push('---');
+        lines.push('');
+      }
     }
   }
 
   return lines.join('\n');
+}
+
+/** 渲染 Body Schema 参数行（模板列：字段名/字段说明/字段类型/是否必填） */
+function renderBodyParamRows(params: ResponseParam[], lines: string[], indent: string) {
+  for (const p of params) {
+    const displayPath = indent + p.path.split('.').pop()!;
+    lines.push(
+      `| ${displayPath} | ${escapeMd(p.description)} | ${p.type} | ${p.required ? '是' : '否'} |`,
+    );
+    if (p.children) {
+      renderBodyParamRows(p.children, lines, indent + '  ');
+    }
+  }
 }
 
 function renderSchemaRows(params: ResponseParam[], lines: string[], indent: string) {
