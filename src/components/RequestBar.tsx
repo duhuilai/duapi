@@ -135,6 +135,13 @@ export default function RequestBar() {
         placeholder="输入请求 URL，使用 {{变量}} 语法..."
       />
       <button
+        style={styles.saveBtn}
+        onClick={() => dispatch({ type: 'SAVE_ENDPOINT' })}
+        title="Ctrl+S"
+      >
+        保存
+      </button>
+      <button
         style={{
           ...styles.sendBtn,
           opacity: state.isRequesting ? 0.7 : 1,
@@ -192,5 +199,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     color: 'white',
     transition: 'opacity 0.15s',
+  },
+  saveBtn: {
+    width: 60,
+    height: 32,
+    background: '#E9EEF6',
+    border: '1px solid #DBEAFE',
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#1E40AF',
+    cursor: 'pointer',
+    outline: 'none',
   },
 };

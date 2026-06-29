@@ -23,7 +23,21 @@ function WorkspacePage() {
 }
 
 function AppContent() {
-  const { state } = useApi();
+  const { state, dispatch } = useApi();
+
+  // Ctrl+S / Cmd+S shortcut
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (state.activeEndpointId) {
+          dispatch({ type: 'SAVE_ENDPOINT' });
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [state.activeEndpointId, dispatch]);
 
   return (
     <div style={styles.app}>
@@ -48,7 +62,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100vh',
     width: '100vw',
     background: '#F8FAFC',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
     color: '#1E3A8A',
   },
   workspace: {

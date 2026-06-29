@@ -314,7 +314,8 @@ type Action =
   | { type: 'RENAME_GROUP'; payload: { id: string; name: string } }
   | { type: 'ADD_ENDPOINT'; payload: string }        // groupId
   | { type: 'DELETE_ENDPOINT'; payload: { groupId: string; endpointId: string } }
-  | { type: 'RENAME_ENDPOINT'; payload: { endpointId: string; name: string } };
+  | { type: 'RENAME_ENDPOINT'; payload: { endpointId: string; name: string } }
+  | { type: 'SAVE_ENDPOINT' };
 
 // ---- Reducer ----
 
@@ -629,6 +630,31 @@ function reducer(state: AppState, action: Action): AppState {
       const newGroups = state.groups.map(g => ({
         ...g,
         endpoints: g.endpoints.map(e => e.id === endpointId ? { ...e, name } : e),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'SAVE_ENDPOINT': {
+      const { activeEndpointId, request, groups } = state;
+      if (!activeEndpointId) return state;
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId
+            ? {
+                ...e,
+                method: request.method,
+                url: request.url,
+                params: request.params.map(p => ({ ...p })),
+                headers: request.headers.map(h => ({ ...h })),
+                auth: { ...request.auth },
+                body: request.body,
+                bodyType: request.bodyType,
+                preScript: request.preScript,
+                testScript: request.testScript,
+              }
+            : e
+        ),
       }));
       return { ...state, groups: newGroups };
     }
