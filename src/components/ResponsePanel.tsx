@@ -8,6 +8,7 @@ export default function ResponsePanel() {
   const { state, dispatch } = useApi();
   const { response, isRequesting, groups, activeEndpointId } = state;
   const [activeTab, setActiveTab] = useState<RespTab>('body');
+  const [copied, setCopied] = useState(false);
 
   const activeEndpoint = useMemo(
     () => groups.flatMap(g => g.endpoints).find(e => e.id === activeEndpointId),
@@ -42,6 +43,27 @@ export default function ResponsePanel() {
       return <SyntaxHighlight json={obj} />;
     } catch {
       return <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: 12, fontFamily: 'monospace', color: '#1E3A8A' }}>{text}</pre>;
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!response) return;
+    try {
+      await navigator.clipboard.writeText(response.body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers / Electron
+      const textarea = document.createElement('textarea');
+      textarea.value = response.body;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -108,16 +130,27 @@ export default function ResponsePanel() {
     <aside style={styles.panel}>
       <div style={styles.header}>
         <span style={styles.title}>响应</span>
-        {response && (
-          <span style={{ ...styles.statusBadge, background: statusColor === '#16A34A' ? '#DCFCE7' : '#FEE2E2', color: statusColor }}>
-            {response.status} {response.statusText}
-          </span>
-        )}
-        {isRequesting && (
-          <span style={{ ...styles.statusBadge, background: '#FEF3C7', color: '#D97706' }}>
-            请求中...
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {response && (
+            <button
+              style={copyBtn(copied)}
+              onClick={handleCopy}
+              title="复制响应内容"
+            >
+              {copied ? '✓ 已复制' : '📋 复制'}
+            </button>
+          )}
+          {response && (
+            <span style={{ ...styles.statusBadge, background: statusColor === '#16A34A' ? '#DCFCE7' : '#FEE2E2', color: statusColor }}>
+              {response.status} {response.statusText}
+            </span>
+          )}
+          {isRequesting && (
+            <span style={{ ...styles.statusBadge, background: '#FEF3C7', color: '#D97706' }}>
+              请求中...
+            </span>
+          )}
+        </div>
       </div>
 
       <div style={styles.tabBar}>
@@ -590,3 +623,17 @@ const ecDelBtn: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
 };
+
+const copyBtn = (active: boolean): React.CSSProperties => ({
+  height: 26,
+  padding: '0 10px',
+  border: active ? '1px solid #16A34A' : '1px solid #DBEAFE',
+  borderRadius: 4,
+  fontSize: 11,
+  fontWeight: 500,
+  color: active ? '#16A34A' : '#1E40AF',
+  background: active ? '#DCFCE7' : '#EFF6FF',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap' as const,
+  transition: 'all 0.15s',
+});
