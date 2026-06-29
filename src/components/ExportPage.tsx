@@ -36,42 +36,61 @@ function generateMarkdown(
     g.endpoints.some(e => selectedEndpoints.includes(e.id)),
   );
 
+  if (selectedGroups.length === 0) return '';
+
+  // ── 文档元数据 ──
+  const docTitle = selectedGroups[0]?.name || 'API 接口文档';
+  const today = new Date().toISOString().slice(0, 10);
+  lines.push(`# ${escapeMd(docTitle)}`);
+  lines.push('');
+  lines.push('duApi');
+  lines.push('');
+  lines.push(today);
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+
+  // 全局接口编号
+  let epNum = 0;
+
   for (const group of selectedGroups) {
     const eps = group.endpoints.filter(e => selectedEndpoints.includes(e.id));
     if (eps.length === 0) continue;
 
-    // ── 以分组名作为一级标题 ──
-    lines.push(`# ${escapeMd(group.name)}`);
-    lines.push('');
-
     for (const ep of eps) {
+      epNum++;
+
+      // ── 编号接口名（H2） ──
+      lines.push(`## ${epNum}、${escapeMd(ep.name)}`);
+      lines.push('');
+
       // ── 接口说明 ──
-      lines.push('## 接口说明：');
+      lines.push('接口说明：');
       lines.push('');
       lines.push(ep.description || '（无）');
       lines.push('');
 
       // ── 接口请求地址 ──
-      lines.push('## 接口请求地址：');
+      lines.push('接口请求地址：');
       lines.push('');
       lines.push(escapeMd(ep.url));
       lines.push('');
 
       // ── 请求方式 ──
-      lines.push('## 请求方式:');
+      lines.push('请求方式:');
       lines.push('');
       lines.push(ep.method);
       lines.push('');
 
       // ── 参数类型 ──
-      lines.push('## 参数类型：');
+      lines.push('参数类型：');
       lines.push('');
       lines.push(bodyTypeLabel(ep.bodyType));
       lines.push('');
 
       // ── 请求头 ──
       if (ep.headers.length > 0) {
-        lines.push('## 请求头：');
+        lines.push('请求头：');
         lines.push('');
         lines.push('| 请求头 | 请求内容 | 说明 |');
         lines.push('|--------|----------|------|');
@@ -83,7 +102,7 @@ function generateMarkdown(
 
       // ── 请求示例 ──
       if (opts.includeResponse && ep.body && ep.bodyType !== 'none') {
-        lines.push('## 请求示例：');
+        lines.push('请求示例：');
         lines.push('');
         const lang = ep.bodyType === 'json' ? 'json' : '';
         lines.push('```' + lang);
@@ -97,7 +116,7 @@ function generateMarkdown(
       const hasUrlParams = opts.includeParams && ep.params.length > 0;
 
       if (hasBodyParams || hasUrlParams) {
-        lines.push('## 请求参数说明：');
+        lines.push('请求参数说明：');
         lines.push('');
         lines.push('| 字段名 | 字段说明 | 字段类型 | 是否必填 |');
         lines.push('|--------|----------|----------|----------|');
@@ -117,43 +136,19 @@ function generateMarkdown(
 
       // ── 响应示例 ──
       if (ep.responseExample) {
-        lines.push('## 响应示例');
+        lines.push('响应示例');
         lines.push('');
-        // 尝试解析是否为成功/失败格式的 JSON
-        let successEx = ep.responseExample;
-        let failureEx = '';
-        try {
-          const parsed = JSON.parse(ep.responseExample);
-          if (parsed.success !== undefined) {
-            successEx = JSON.stringify(parsed.success, null, 2);
-          }
-          if (parsed.failure !== undefined) {
-            failureEx = JSON.stringify(parsed.failure, null, 2);
-          }
-        } catch {
-          // 不是 JSON 对象格式，直接当作成功示例
-        }
-
-        lines.push('### 成功响应编码：');
+        lines.push('响应编码：');
         lines.push('');
         lines.push('```json');
-        lines.push(successEx);
+        lines.push(ep.responseExample);
         lines.push('```');
         lines.push('');
-
-        if (failureEx) {
-          lines.push('### 失败响应编码：');
-          lines.push('');
-          lines.push('```json');
-          lines.push(failureEx);
-          lines.push('```');
-          lines.push('');
-        }
       }
 
       // ── 响应成功参数说明 ──
       if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
-        lines.push('## 响应成功参数说明：');
+        lines.push('响应成功参数说明：');
         lines.push('');
         lines.push('| 字段路径 | 类型 | 必填 | 说明 |');
         lines.push('|----------|------|------|------|');
@@ -163,7 +158,7 @@ function generateMarkdown(
 
       // ── 响应错误码说明 ──
       if (opts.includeErrors && ep.errorCodes && ep.errorCodes.length > 0) {
-        lines.push('## 响应错误码说明：');
+        lines.push('响应错误码说明：');
         lines.push('');
         lines.push('| 接口返回码 | 接口返回描述 |');
         lines.push('|------------|--------------|');
@@ -174,7 +169,7 @@ function generateMarkdown(
       }
 
       // 接口之间用分隔线隔开
-      if (eps.indexOf(ep) < eps.length - 1) {
+      if (epNum < selectedEndpoints.length) {
         lines.push('---');
         lines.push('');
       }
