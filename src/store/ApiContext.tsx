@@ -307,7 +307,14 @@ type Action =
   | { type: 'SELECT_ALL_EXPORT' }
   | { type: 'DESELECT_ALL_EXPORT' }
   | { type: 'SET_BODY_TYPE'; payload: 'json' | 'form' | 'raw' | 'none' }
-  | { type: 'LOAD_STATE'; payload: Partial<AppState> };
+  | { type: 'LOAD_STATE'; payload: Partial<AppState> }
+  // ---- 分组 & 接口 增删 ----
+  | { type: 'ADD_GROUP' }
+  | { type: 'DELETE_GROUP'; payload: string }
+  | { type: 'RENAME_GROUP'; payload: { id: string; name: string } }
+  | { type: 'ADD_ENDPOINT'; payload: string }        // groupId
+  | { type: 'DELETE_ENDPOINT'; payload: { groupId: string; endpointId: string } }
+  | { type: 'RENAME_ENDPOINT'; payload: { endpointId: string; name: string } };
 
 // ---- Reducer ----
 
@@ -500,6 +507,131 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
+
+    // ---- 分组操作 ----
+    case 'ADD_GROUP': {
+      const colors = ['#1E40AF', '#16A34A', '#D97706', '#DC2626', '#7C3AED', '#0891B2'];
+      const newGroup: ApiGroup = {
+        id: generateId(),
+        name: '新建分组',
+        icon: 'N',
+        iconColor: colors[state.groups.length % colors.length],
+        collapsed: false,
+        endpoints: [],
+      };
+      return { ...state, groups: [...state.groups, newGroup] };
+    }
+
+    case 'DELETE_GROUP': {
+      const gid = action.payload;
+      const newGroups = state.groups.filter(g => g.id !== gid);
+      // 如果删掉的分组包含当前选中接口，切到第一个可用接口
+      const deletedGroup = state.groups.find(g => g.id === gid);
+      const deletedIds = deletedGroup?.endpoints.map(e => e.id) ?? [];
+      const needSwitch = deletedIds.includes(state.activeEndpointId ?? '');
+      const nextEp = newGroups[0]?.endpoints[0];
+      return {
+        ...state,
+        groups: newGroups,
+        activeEndpointId: needSwitch ? (nextEp?.id ?? null) : state.activeEndpointId,
+        request: needSwitch && nextEp ? {
+          method: nextEp.method,
+          url: nextEp.url,
+          params: nextEp.params.map(p => ({ ...p })),
+          headers: nextEp.headers.map(h => ({ ...h })),
+          auth: { ...nextEp.auth },
+          body: nextEp.body,
+          bodyType: nextEp.bodyType,
+          preScript: nextEp.preScript,
+          testScript: nextEp.testScript,
+        } : state.request,
+      };
+    }
+
+    case 'RENAME_GROUP': {
+      return {
+        ...state,
+        groups: state.groups.map(g =>
+          g.id === action.payload.id ? { ...g, name: action.payload.name } : g
+        ),
+      };
+    }
+
+    // ---- 接口操作 ----
+    case 'ADD_ENDPOINT': {
+      const gid = action.payload;
+      const newEp: ApiEndpoint = {
+        id: generateId(),
+        name: '新建接口',
+        method: 'GET',
+        url: '',
+        params: [],
+        headers: [
+          { id: generateId(), key: 'Content-Type', value: 'application/json', description: '', enabled: true },
+        ],
+        auth: { type: 'none' },
+        body: '',
+        bodyType: 'none',
+        preScript: '',
+        testScript: '',
+        description: '',
+      };
+      const newGroups = state.groups.map(g =>
+        g.id === gid ? { ...g, collapsed: false, endpoints: [...g.endpoints, newEp] } : g
+      );
+      return {
+        ...state,
+        groups: newGroups,
+        activeEndpointId: newEp.id,
+        request: {
+          method: newEp.method,
+          url: newEp.url,
+          params: [],
+          headers: [...newEp.headers],
+          auth: { type: 'none' },
+          body: '',
+          bodyType: 'none',
+          preScript: '',
+          testScript: '',
+        },
+      };
+    }
+
+    case 'DELETE_ENDPOINT': {
+      const { groupId, endpointId } = action.payload;
+      const newGroups = state.groups.map(g =>
+        g.id === groupId ? { ...g, endpoints: g.endpoints.filter(e => e.id !== endpointId) } : g
+      );
+      const needSwitch = state.activeEndpointId === endpointId;
+      const allEps = newGroups.flatMap(g => g.endpoints);
+      const nextEp = allEps[0];
+      return {
+        ...state,
+        groups: newGroups,
+        activeEndpointId: needSwitch ? (nextEp?.id ?? null) : state.activeEndpointId,
+        request: needSwitch && nextEp ? {
+          method: nextEp.method,
+          url: nextEp.url,
+          params: nextEp.params.map(p => ({ ...p })),
+          headers: nextEp.headers.map(h => ({ ...h })),
+          auth: { ...nextEp.auth },
+          body: nextEp.body,
+          bodyType: nextEp.bodyType,
+          preScript: nextEp.preScript,
+          testScript: nextEp.testScript,
+        } : state.request,
+      };
+    }
+
+    case 'RENAME_ENDPOINT': {
+      const { endpointId, name } = action.payload;
+      // Also update sidebar display name in groups
+      const newGroups = state.groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e => e.id === endpointId ? { ...e, name } : e),
+      }));
+      return { ...state, groups: newGroups };
+    }
 
     default:
       return state;
