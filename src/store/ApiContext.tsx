@@ -293,6 +293,7 @@ function createInitialState(): AppState {
       bodyType: 'none',
       preScript: '// 设置变量\npm.variables.set("timestamp", new Date().toISOString());',
       testScript: '// 状态码测试\npm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
+      description: '',
     },
     response: saved.response || {
       body: JSON.stringify({
@@ -357,6 +358,7 @@ type Action =
   | { type: 'SELECT_ALL_EXPORT' }
   | { type: 'DESELECT_ALL_EXPORT' }
   | { type: 'SET_BODY_TYPE'; payload: 'json' | 'form' | 'raw' | 'none' }
+  | { type: 'SET_DESCRIPTION'; payload: string }
   | { type: 'LOAD_STATE'; payload: Partial<AppState> }
   // ---- 分组 & 接口 增删 ----
   | { type: 'ADD_GROUP' }
@@ -397,6 +399,7 @@ function reducer(state: AppState, action: Action): AppState {
           bodyType: endpoint.bodyType,
           preScript: endpoint.preScript,
           testScript: endpoint.testScript,
+          description: endpoint.description,
         },
       };
     }
@@ -486,6 +489,9 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_BODY_TYPE':
       return { ...state, request: { ...state.request, bodyType: action.payload } };
+
+    case 'SET_DESCRIPTION':
+      return { ...state, request: { ...state.request, description: action.payload } };
 
     case 'TOGGLE_FORMAT': {
       const formats = state.exportConfig.formats.includes(action.payload)
@@ -600,6 +606,7 @@ function reducer(state: AppState, action: Action): AppState {
           bodyType: nextEp.bodyType,
           preScript: nextEp.preScript,
           testScript: nextEp.testScript,
+          description: nextEp.description,
         } : state.request,
       };
     }
@@ -677,6 +684,7 @@ function reducer(state: AppState, action: Action): AppState {
           bodyType: nextEp.bodyType,
           preScript: nextEp.preScript,
           testScript: nextEp.testScript,
+          description: nextEp.description,
         } : state.request,
       };
     }
@@ -709,6 +717,7 @@ function reducer(state: AppState, action: Action): AppState {
                 bodyType: request.bodyType,
                 preScript: request.preScript,
                 testScript: request.testScript,
+                description: request.description,
                 bodyParams: e.bodyParams,
               }
             : e

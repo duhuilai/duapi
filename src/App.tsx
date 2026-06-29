@@ -61,9 +61,11 @@ function useDragger(options: {
 // ---- Workspace 页面 ----
 
 function WorkspacePage() {
+  const { state, dispatch } = useApi();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [responseHeight, setResponseHeight] = useState(340);
+  const [showDesc, setShowDesc] = useState(false);
 
   const sidebarDragger = useDragger({
     direction: 'vertical',
@@ -105,6 +107,59 @@ function WorkspacePage() {
         {/* 上半部分：请求调试 */}
         <div style={styles.requestArea}>
           <RequestBar />
+          {/* ── 接口描述 ── */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 16px',
+            gap: 6,
+          }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: '#64748B',
+                cursor: 'pointer',
+                userSelect: 'none',
+                fontWeight: 500,
+              }}
+              onClick={() => setShowDesc(!showDesc)}
+            >
+              {showDesc ? '▾' : '▸'} 接口说明
+            </span>
+            {state.request.description && !showDesc && (
+              <span style={{
+                fontSize: 11,
+                color: '#94A3B8',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: 1,
+              }}>
+                {state.request.description}
+              </span>
+            )}
+          </div>
+          {showDesc && (
+            <textarea
+              style={{
+                width: 'calc(100% - 32px)',
+                margin: '0 16px 4px',
+                height: 48,
+                border: '1px solid #DBEAFE',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                fontFamily: 'inherit',
+                color: '#1E3A8A',
+                background: '#F8FAFC',
+                resize: 'vertical',
+                outline: 'none',
+              }}
+              value={state.request.description}
+              onChange={e => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
+              placeholder="接口的总体描述，如：获取指定用户的详细信息，包括角色和权限..."
+            />
+          )}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <RequestTabs />
           </div>

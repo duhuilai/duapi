@@ -110,7 +110,7 @@ export default function WysiwygEditor({ value, onChange, placeholder, style }: P
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, ...style }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, ...style }}>
       {/* 工具栏 */}
       <div style={toolbarStyle}>
         {toolGroups.map((group, gi) => (
@@ -143,6 +143,7 @@ export default function WysiwygEditor({ value, onChange, placeholder, style }: P
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        className="wysiwyg-content"
         onInput={handleInput}
         onKeyDown={e => {
           // Tab 插入缩进而非切换焦点
@@ -262,10 +263,63 @@ const placeholderCss = `
   }
 `;
 
-// Inject the placeholder style once
+// Inject editor styles once (placeholders, table borders, code blocks etc.)
 if (typeof document !== 'undefined' && !(document as any).__wysiwygStyle) {
   const styleEl = document.createElement('style');
-  styleEl.textContent = placeholderCss;
+  styleEl.textContent = placeholderCss + `
+  /* Table borders */
+  .wysiwyg-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    border: 1px solid #DBEAFE;
+  }
+  .wysiwyg-content th {
+    background: #EFF6FF;
+    padding: 8px 12px;
+    border: 1px solid #BFDBFE;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E40AF;
+    text-align: left;
+  }
+  .wysiwyg-content td {
+    padding: 8px 12px;
+    border: 1px solid #DBEAFE;
+    font-size: 13px;
+    color: #334155;
+  }
+  .wysiwyg-content tr:nth-child(even) td {
+    background: #F8FAFC;
+  }
+  /* Code blocks */
+  .wysiwyg-content pre {
+    background: #F1F5F9;
+    padding: 12px 16px;
+    border-radius: 6px;
+    border: 1px solid #DBEAFE;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  .wysiwyg-content pre code {
+    background: none;
+    padding: 0;
+    font-size: 13px;
+    color: #1E3A8A;
+    line-height: 1.7;
+  }
+  .wysiwyg-content blockquote {
+    border-left: 3px solid #BFDBFE;
+    padding-left: 12px;
+    margin: 8px 0;
+    color: #64748B;
+  }
+  .wysiwyg-content hr {
+    border: none;
+    border-top: 1px solid #DBEAFE;
+    margin: 16px 0;
+  }
+  `;
   document.head.appendChild(styleEl);
   (document as any).__wysiwygStyle = true;
 }

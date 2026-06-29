@@ -489,6 +489,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
     background: '#F8FAFC',
     position: 'relative',
+    overflow: 'hidden',
   },
 
   sidebar: {
@@ -545,7 +546,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#1E40AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
   },
 
-  editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 16px' },
+  editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 16px', overflow: 'hidden' },
   editorHeader: { padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
 
   footer: {

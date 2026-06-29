@@ -111,6 +111,7 @@ export interface RequestState {
   bodyType: 'json' | 'form' | 'raw' | 'none';
   preScript: string;
   testScript: string;
+  description: string;
 }
 
 // 应用状态
