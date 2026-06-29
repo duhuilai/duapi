@@ -49,6 +49,9 @@ jobs:
   build-windows:
     name: Build Windows (nsis installer)
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@v4
