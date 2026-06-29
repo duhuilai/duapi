@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApi } from '../store/ApiContext';
-import type { ExportFormat } from '../types';
+import type { ExportFormat, ApiEndpoint, ApiGroup, ResponseParam } from '../types';
 
 const methodColors: Record<string, { bg: string; text: string }> = {
   GET: { bg: '#DCFCE7', text: '#16A34A' },
@@ -10,12 +10,234 @@ const methodColors: Record<string, { bg: string; text: string }> = {
   PATCH: { bg: '#F3E8FF', text: '#7C3AED' },
 };
 
-const formats: { key: ExportFormat; icon: string; name: string; desc: string; bg: string }[] = [
-  { key: 'pdf', icon: 'PDF', name: 'PDF 文档', desc: '适合打印与分享', bg: '#DC2626' },
-  { key: 'doc', icon: 'DOC', name: 'Word 文档', desc: '.docx 可二次编辑', bg: '#1E40AF' },
-  { key: 'html', icon: 'HTML', name: 'HTML 页面', desc: '浏览器直接查阅', bg: '#7C3AED' },
-  { key: 'md', icon: 'MD', name: 'Markdown', desc: '适合 Git 仓库', bg: '#64748B' },
+const formats: { key: ExportFormat; icon: string; name: string }[] = [
+  { key: 'md', icon: 'MD', name: 'Markdown' },
+  { key: 'html', icon: 'H', name: 'HTML' },
+  { key: 'pdf', icon: 'P', name: 'PDF' },
+  { key: 'doc', icon: 'D', name: 'Word' },
 ];
+
+// ---- Markdown 生成器 ----
+
+function generateMarkdown(
+  groups: ApiGroup[],
+  selectedEndpoints: string[],
+  opts: { includeParams: boolean; includeResponse: boolean; includeSchema: boolean },
+): string {
+  const lines: string[] = [];
+  const now = new Date().toLocaleString('zh-CN');
+
+  lines.push('# API 接口文档');
+  lines.push('');
+  lines.push(`> 生成时间: ${now} | 共 ${selectedEndpoints.length} 个接口`);
+  lines.push('');
+
+  const selectedGroups = groups.filter(g =>
+    g.endpoints.some(e => selectedEndpoints.includes(e.id))
+  );
+
+  for (const group of selectedGroups) {
+    const eps = group.endpoints.filter(e => selectedEndpoints.includes(e.id));
+    if (eps.length === 0) continue;
+
+    lines.push(`## ${escapeMd(group.name)}`);
+    lines.push('');
+
+    for (const ep of eps) {
+      lines.push(`### ${escapeMd(ep.name)}`);
+      lines.push('');
+      lines.push(`\`${ep.method}\`  ${escapeMd(ep.url)}`);
+      lines.push('');
+
+      if (ep.description) {
+        lines.push(escapeMd(ep.description));
+        lines.push('');
+      }
+
+      // 请求参数
+      if (opts.includeParams && ep.params.length > 0) {
+        lines.push('**请求参数**');
+        lines.push('');
+        lines.push('| 参数名 | 参数值 | 必填 | 描述 |');
+        lines.push('|--------|--------|------|------|');
+        for (const p of ep.params) {
+          lines.push(`| ${escapeMd(p.name)} | ${escapeMd(p.value)} | ${p.enabled ? '是' : '否'} | ${escapeMd(p.description)} |`);
+        }
+        lines.push('');
+      }
+
+      // 请求头
+      if (ep.headers.length > 0) {
+        lines.push('**请求头**');
+        lines.push('');
+        lines.push('| 键 | 值 | 描述 |');
+        lines.push('|----|-----|------|');
+        for (const h of ep.headers) {
+          lines.push(`| ${escapeMd(h.key)} | ${escapeMd(h.value)} | ${escapeMd(h.description)} |`);
+        }
+        lines.push('');
+      }
+
+      // 请求示例
+      if (opts.includeResponse && ep.body && ep.bodyType !== 'none') {
+        lines.push('**请求示例**');
+        lines.push('');
+        const lang = ep.bodyType === 'json' ? 'json' : '';
+        lines.push('```' + lang);
+        lines.push(ep.body);
+        lines.push('```');
+        lines.push('');
+      }
+
+      // 响应参数 Schema
+      if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
+        lines.push('**响应参数说明**');
+        lines.push('');
+        lines.push('| 字段路径 | 类型 | 必填 | 说明 |');
+        lines.push('|----------|------|------|------|');
+        renderSchemaRows(ep.responseParams, lines, '');
+        lines.push('');
+      }
+
+      lines.push('---');
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function renderSchemaRows(params: ResponseParam[], lines: string[], indent: string) {
+  for (const p of params) {
+    const displayPath = indent + p.path.split('.').pop()!;
+    lines.push(`| ${displayPath} | ${p.type} | ${p.required ? '是' : '否'} | ${escapeMd(p.description)} |`);
+    if (p.children) {
+      renderSchemaRows(p.children, lines, indent + '  ');
+    }
+  }
+}
+
+function escapeMd(s: string): string {
+  return s.replace(/\|/g, '\\|').replace(/\*/g, '\\*');
+}
+
+// ---- Markdown → HTML 转换 ----
+
+function mdToHtml(md: string): string {
+  const lines = md.split('\n');
+  let html = '';
+  let inTable = false;
+  let inCodeBlock = false;
+  let codeContent = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    // Code block
+    if (line.startsWith('```')) {
+      if (inCodeBlock) {
+        html += `<pre><code>${escapeHtml(codeContent)}</code></pre>\n`;
+        codeContent = '';
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      codeContent += (codeContent ? '\n' : '') + line;
+      continue;
+    }
+
+    // Table
+    if (line.startsWith('|')) {
+      if (!inTable) {
+        html += '<table>\n';
+        inTable = true;
+      }
+      const cells = line.split('|').filter(c => c.trim() !== '' || line.endsWith('|'));
+      const isHeader = i + 1 < lines.length && lines[i + 1].startsWith('|') && lines[i + 1].includes('---');
+      const tag = isHeader ? 'th' : 'td';
+      html += '<tr>';
+      for (const cell of cells) {
+        html += `<${tag}>${inlineMdToHtml(cell.trim())}</${tag}>`;
+      }
+      html += '</tr>\n';
+      if (isHeader) {
+        i++; // skip separator row
+      }
+      continue;
+    } else {
+      if (inTable) {
+        html += '</table>\n';
+        inTable = false;
+      }
+    }
+
+    // Headings
+    if (line.startsWith('### ')) {
+      html += `<h3>${inlineMdToHtml(line.slice(4))}</h3>\n`;
+    } else if (line.startsWith('## ')) {
+      html += `<h2>${inlineMdToHtml(line.slice(3))}</h2>\n`;
+    } else if (line.startsWith('# ')) {
+      html += `<h1>${inlineMdToHtml(line.slice(2))}</h1>\n`;
+    } else if (line.startsWith('> ')) {
+      html += `<blockquote>${inlineMdToHtml(line.slice(2))}</blockquote>\n`;
+    } else if (line.startsWith('---')) {
+      html += '<hr>\n';
+    } else if (line.trim() === '') {
+      html += '\n';
+    } else {
+      html += `<p>${inlineMdToHtml(line)}</p>\n`;
+    }
+  }
+
+  if (inTable) html += '</table>\n';
+  if (inCodeBlock && codeContent) {
+    html += `<pre><code>${escapeHtml(codeContent)}</code></pre>\n`;
+  }
+
+  return html;
+}
+
+function inlineMdToHtml(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.+?)`/g, '<code>$1</code>');
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function wrapFullHtml(body: string, title: string): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(title)}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; max-width: 960px; margin: 0 auto; padding: 40px 20px; color: #1E3A8A; background: #F8FAFC; line-height: 1.7; }
+  h1 { color: #1E40AF; border-bottom: 2px solid #DBEAFE; padding-bottom: 12px; }
+  h2 { color: #1E40AF; margin-top: 32px; border-bottom: 1px solid #DBEAFE; padding-bottom: 6px; }
+  h3 { color: #3B82F6; margin-top: 24px; }
+  blockquote { border-left: 3px solid #DBEAFE; padding-left: 12px; color: #64748B; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; }
+  th { text-align: left; padding: 6px 8px; background: #F1F5F9; font-size: 13px; color: #64748B; border: 1px solid #DBEAFE; }
+  td { padding: 6px 8px; border: 1px solid #DBEAFE; font-size: 13px; }
+  pre { background: #F1F5F9; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; border: 1px solid #DBEAFE; }
+  code { background: #F1F5F9; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+  pre code { background: none; padding: 0; }
+  hr { border: none; border-top: 1px solid #DBEAFE; margin: 16px 0; }
+  strong { color: #1E40AF; }
+  p { margin: 6px 0; }
+</style>
+</head><body>
+${body}
+</body></html>`;
+}
+
+// ---- ExportPage 组件 ----
 
 export default function ExportPage() {
   const { state, dispatch } = useApi();
@@ -24,75 +246,103 @@ export default function ExportPage() {
   const totalEndpoints = groups.reduce((sum, g) => sum + g.endpoints.length, 0);
   const selectedCount = exportConfig.selectedEndpoints.length;
 
-  const handlePreview = () => {
-    const selectedGroups = groups.filter(g => exportConfig.selectedGroups.includes(g.id));
-    const selectedEndpoints = groups.flatMap(g =>
-      g.endpoints.filter(e => exportConfig.selectedEndpoints.includes(e.id))
-    );
+  // 编辑器本地缓存（每次生成时重置）
+  const [localContent, setLocalContent] = useState(state.exportContent);
+  const [activeFormat, setActiveFormat] = useState<ExportFormat>('html');
+  const [includeSchema, setIncludeSchema] = useState(true);
+  const [toast, setToast] = useState('');
 
-    let html = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<title>duapi - API 文档预览</title>
-<style>
-  body { font-family: -apple-system, sans-serif; max-width: 960px; margin: 0 auto; padding: 40px 20px; color: #1E3A8A; background: #F8FAFC; }
-  h1 { color: #1E40AF; border-bottom: 2px solid #DBEAFE; padding-bottom: 12px; }
-  h2 { color: #1E40AF; margin-top: 32px; }
-  .endpoint { background: #FFF; border: 1px solid #DBEAFE; border-radius: 8px; padding: 16px; margin: 12px 0; }
-  .method { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
-  .method-GET { background: #DCFCE7; color: #16A34A; }
-  .method-POST { background: #DBEAFE; color: #1E40AF; }
-  .method-PUT { background: #FEF3C7; color: #D97706; }
-  .method-DELETE { background: #FEE2E2; color: #DC2626; }
-  .method-PATCH { background: #F3E8FF; color: #7C3AED; }
-  .url { font-family: monospace; margin-left: 8px; color: #64748B; }
-  pre { background: #F1F5F9; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
-  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-  th { text-align: left; padding: 6px 8px; background: #F1F5F9; font-size: 12px; color: #64748B; }
-  td { padding: 6px 8px; border-bottom: 1px solid #F1F5F9; font-size: 12px; }
-</style></head><body>
-<h1>duapi - API 接口文档</h1>
-<p>生成时间: ${new Date().toLocaleString('zh-CN')} | 共 ${selectedCount} 个接口</p>`;
-
-    selectedGroups.forEach(group => {
-      html += `<h2>${group.name}</h2>`;
-      group.endpoints
-        .filter(e => exportConfig.selectedEndpoints.includes(e.id))
-        .forEach(ep => {
-          html += `<div class="endpoint">
-  <span class="method method-${ep.method}">${ep.method}</span>
-  <span class="url">${ep.url}</span>
-  <p>${ep.description || ''}</p>`;
-          if (exportConfig.includeParams && ep.params.length > 0) {
-            html += `<h4>请求参数</h4><table><tr><th>参数名</th><th>参数值</th><th>描述</th></tr>`;
-            ep.params.forEach(p => {
-              html += `<tr><td>${p.name}</td><td>${p.value}</td><td>${p.description || ''}</td></tr>`;
-            });
-            html += `</table>`;
-          }
-          if (exportConfig.includeResponse && ep.body) {
-            html += `<h4>请求示例</h4><pre>${escapeHtml(ep.body)}</pre>`;
-          }
-          html += `</div>`;
-        });
-    });
-
-    html += `</body></html>`;
-
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2000);
   };
 
+  // 生成文档
+  const handleGenerate = () => {
+    if (selectedCount === 0) {
+      showToast('请先选择需要导出的接口');
+      return;
+    }
+    const md = generateMarkdown(groups, exportConfig.selectedEndpoints, {
+      includeParams: exportConfig.includeParams,
+      includeResponse: exportConfig.includeResponse,
+      includeSchema,
+    });
+    setLocalContent(md);
+    dispatch({ type: 'SET_EXPORT_CONTENT', payload: md });
+    showToast('文档已生成，可编辑后导出');
+  };
+
+  // 编辑器内容变更
+  const handleEditorChange = (val: string) => {
+    setLocalContent(val);
+  };
+
+  // 保存到 store
+  const handleSave = () => {
+    dispatch({ type: 'SET_EXPORT_CONTENT', payload: localContent });
+    showToast('文档内容已保存');
+  };
+
+  // 导出文档
   const handleExport = () => {
-    // Simulate export — in production would generate actual files
-    alert(`导出功能：已选择 ${selectedCount} 个接口\n格式: ${exportConfig.formats.join(', ')}\n合并文档: ${exportConfig.mergeDoc ? '是' : '否'}\n\n在 Electron 环境中将支持导出为实际文件。`);
+    if (!localContent.trim()) {
+      showToast('请先生成或编辑文档内容');
+      return;
+    }
+
+    const now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+    if (activeFormat === 'md') {
+      downloadFile(`api-doc-${now}.md`, localContent, 'text/markdown');
+      showToast('Markdown 文档已下载');
+    } else if (activeFormat === 'html') {
+      const body = mdToHtml(localContent);
+      const full = wrapFullHtml(body, 'API 接口文档');
+      downloadFile(`api-doc-${now}.html`, full, 'text/html');
+      showToast('HTML 文档已下载');
+    } else if (activeFormat === 'pdf') {
+      const body = mdToHtml(localContent);
+      const full = wrapFullHtml(body, 'API 接口文档');
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.write(full);
+        w.document.close();
+        setTimeout(() => w.print(), 500);
+      } else {
+        showToast('弹窗被拦截，请允许弹窗后重试');
+      }
+    } else if (activeFormat === 'doc') {
+      const body = mdToHtml(localContent);
+      const docHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->
+<style>
+  body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; line-height: 1.7; }
+  h1 { color: #1E40AF; border-bottom: 2px solid #DBEAFE; padding-bottom: 12px; }
+  h2 { color: #1E40AF; margin-top: 24px; border-bottom: 1px solid #DBEAFE; padding-bottom: 6px; }
+  h3 { color: #3B82F6; margin-top: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+  th { background: #EFF6FF; border: 1px solid #BFDBFE; padding: 4px 6px; }
+  td { border: 1px solid #DBEAFE; padding: 4px 6px; }
+  pre { background: #F1F5F9; padding: 8px; border: 1px solid #DBEAFE; }
+  code { font-size: 11px; }
+  hr { border: none; border-top: 1px solid #DBEAFE; }
+</style>
+</head><body>
+${body}
+</body></html>`;
+      downloadFile(`api-doc-${now}.doc`, docHtml, 'application/msword');
+      showToast('Word 文档已下载');
+    }
   };
 
   return (
     <div style={styles.page}>
-      {/* Sidebar */}
+      {/* ── 左侧：接口选择 ── */}
       <aside style={styles.sidebar}>
         <div style={styles.sidebarHeader}>
           <div style={styles.sidebarTitle}>选择接口</div>
@@ -151,112 +401,121 @@ export default function ExportPage() {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* ── 右侧：配置 + 编辑 + 导出 ── */}
       <main style={styles.main}>
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1E3A8A', marginBottom: 4 }}>导出配置</div>
-          <div style={{ fontSize: 12, color: '#64748B' }}>
-            已选 {selectedCount} 个接口，来自 {exportConfig.selectedGroups.length} 个分组
-          </div>
-        </div>
-
-        {/* Format Selection */}
-        <div style={styles.card}>
-          <div style={styles.cardTitle}>导出格式</div>
-          <div style={styles.formatGrid}>
-            {formats.map(f => {
-              const selected = exportConfig.formats.includes(f.key);
-              return (
-                <div
-                  key={f.key}
-                  style={{
-                    ...styles.formatCard,
-                    borderColor: selected ? '#1E40AF' : '#DBEAFE',
-                    background: selected ? '#DBEAFE' : '#FFFFFF',
-                  }}
-                  onClick={() => dispatch({ type: 'TOGGLE_FORMAT', payload: f.key })}
-                >
-                  <div style={{ ...styles.formatIcon, background: f.bg }}>{f.icon}</div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: '#1E3A8A' }}>{f.name}</div>
-                    <div style={{ fontSize: 11, color: '#64748B' }}>{f.desc}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Content Options */}
-        <div style={styles.card}>
-          <div style={styles.cardTitle}>包含内容</div>
-          {[
-            { key: 'includeParams' as const, label: '请求参数说明' },
-            { key: 'includeResponse' as const, label: '响应示例' },
-            { key: 'includeErrors' as const, label: '错误码说明' },
-            { key: 'includeChangelog' as const, label: '接口变更记录' },
-          ].map(item => (
-            <div key={item.key} style={styles.toggleRow}>
-              <span style={{ fontSize: 13, color: '#1E3A8A' }}>{item.label}</span>
-              <div
-                style={{
-                  ...styles.toggle,
-                  background: exportConfig[item.key] ? '#1E40AF' : '#DBEAFE',
-                }}
-                onClick={() => dispatch({ type: 'TOGGLE_EXPORT_OPTION', payload: item.key })}
-              >
-                <div style={{
-                  ...styles.toggleKnob,
-                  transform: exportConfig[item.key] ? 'translateX(16px)' : 'translateX(0)',
-                }} />
+        {/* 顶栏：格式选择 + 内容选项 + 生成按钮 */}
+        <div style={styles.toolbar}>
+          <div style={styles.toolbarRow}>
+            <div style={styles.toolbarLeft}>
+              <span style={styles.toolbarLabel}>导出格式：</span>
+              <div style={styles.formatTabs}>
+                {formats.map(f => (
+                  <button
+                    key={f.key}
+                    style={{
+                      ...styles.formatTab,
+                      background: activeFormat === f.key ? '#1E40AF' : '#F1F5F9',
+                      color: activeFormat === f.key ? '#fff' : '#64748B',
+                      borderColor: activeFormat === f.key ? '#1E40AF' : '#DBEAFE',
+                    }}
+                    onClick={() => setActiveFormat(f.key)}
+                  >
+                    {f.name}
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
+
+            <div style={styles.toolbarRight}>
+              {/* 快速选项 */}
+              <label style={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={exportConfig.includeParams}
+                  onChange={() => dispatch({ type: 'TOGGLE_EXPORT_OPTION', payload: 'includeParams' })}
+                /> 请求参数
+              </label>
+              <label style={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={exportConfig.includeResponse}
+                  onChange={() => dispatch({ type: 'TOGGLE_EXPORT_OPTION', payload: 'includeResponse' })}
+                /> 请求示例
+              </label>
+              <label style={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={includeSchema}
+                  onChange={() => setIncludeSchema(!includeSchema)}
+                /> Schema
+              </label>
+
+              <button style={styles.generateBtn} onClick={handleGenerate}>
+                📄 生成文档
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Merge Card */}
-        <div
-          style={{
-            ...styles.mergeCard,
-            borderColor: exportConfig.mergeDoc ? '#1E40AF' : '#DBEAFE',
-            background: exportConfig.mergeDoc ? '#DBEAFE' : '#FFFFFF',
-          }}
-          onClick={() => dispatch({ type: 'TOGGLE_EXPORT_OPTION', payload: 'mergeDoc' })}
-        >
-          <div style={{ width: 40, height: 40, background: '#1E40AF', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'white' }}>⊕</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: '#1E40AF' }}>合并为单一文档</div>
-            <div style={{ fontSize: 11, color: '#1E40AF', opacity: 0.8 }}>所有分组汇总输出为一个完整文档</div>
+        {/* 编辑器区域 */}
+        <div style={styles.editorArea}>
+          <div style={styles.editorHeader}>
+            <span style={{ fontSize: 12, color: '#64748B' }}>
+              已选 {selectedCount}/{totalEndpoints} 个接口 — 可直接编辑下方 Markdown 内容
+            </span>
           </div>
-          <div
-            style={{
-              ...styles.toggle,
-              background: exportConfig.mergeDoc ? '#1E40AF' : '#DBEAFE',
-            }}
-          >
-            <div style={{
-              ...styles.toggleKnob,
-              transform: exportConfig.mergeDoc ? 'translateX(16px)' : 'translateX(0)',
-            }} />
-          </div>
+          <textarea
+            style={styles.editor}
+            value={localContent}
+            onChange={e => handleEditorChange(e.target.value)}
+            placeholder={'点击"生成文档"按钮，从所选接口自动生成 Markdown 格式的 API 文档。\n\n生成后可直接在此编辑文档内容，编辑完成后点击"保存"保存内容，或点击"导出"下载为指定格式文件。'}
+            spellCheck={false}
+          />
         </div>
 
-        {/* Footer */}
+        {/* 底部操作栏 */}
         <div style={styles.footer}>
-          <span style={{ fontSize: 12, color: '#64748B' }}>已选 {selectedCount} / {totalEndpoints} 个接口</span>
+          <span style={{ fontSize: 12, color: '#64748B' }}>
+            {localContent ? `${localContent.length} 字符` : '尚未生成文档'}
+          </span>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button style={styles.footerBtn} onClick={handlePreview}>预览</button>
-            <button style={{ ...styles.footerBtn, background: '#1E40AF', color: 'white', borderColor: '#1E40AF' }} onClick={handleExport}>导出文档</button>
+            <button style={styles.footerBtn} onClick={handleSave} disabled={!localContent}>
+              💾 保存
+            </button>
+            <button
+              style={{ ...styles.footerBtn, background: '#1E40AF', color: 'white', borderColor: '#1E40AF' }}
+              onClick={handleExport}
+              disabled={!localContent}
+            >
+              📥 导出 {activeFormat.toUpperCase()}
+            </button>
           </div>
         </div>
       </main>
+
+      {/* Toast 提示 */}
+      {toast && (
+        <div style={styles.toast}>{toast}</div>
+      )}
     </div>
   );
 }
 
-function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// ── 工具函数 ──
+
+function downloadFile(filename: string, content: string, mime: string) {
+  const blob = new Blob(['\uFEFF' + content], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
+
+// ── 样式 ──
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -264,7 +523,10 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     height: '100%',
     background: '#F8FAFC',
+    position: 'relative',
   },
+
+  // Sidebar
   sidebar: {
     width: 260,
     minWidth: 260,
@@ -352,9 +614,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     color: '#1E3A8A',
   },
-  apiList: {
-    paddingLeft: 30,
-  },
+  apiList: { paddingLeft: 30 },
   apiItem: {
     display: 'flex',
     alignItems: 'center',
@@ -378,90 +638,108 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: '#1E3A8A',
   },
+
+  // Main
   main: {
     flex: 1,
-    padding: 24,
-    overflow: 'auto',
     display: 'flex',
     flexDirection: 'column',
+    minWidth: 0,
   },
-  card: {
+
+  // Toolbar
+  toolbar: {
     background: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    border: '1px solid #DBEAFE',
-    marginBottom: 16,
+    borderBottom: '1px solid #DBEAFE',
+    padding: '10px 16px',
   },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: 500,
-    color: '#64748B',
-    marginBottom: 12,
-  },
-  formatGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: 8,
-  },
-  formatCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 8,
-    border: '1px solid #DBEAFE',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  formatIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 10,
-    fontWeight: 700,
-    color: 'white',
-    flexShrink: 0,
-  },
-  toggleRow: {
+  toolbarRow: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '8px 0',
-    borderBottom: '1px solid #DBEAFE',
   },
-  toggle: {
-    width: 36,
-    height: 20,
-    borderRadius: 10,
-    position: 'relative' as const,
-    cursor: 'pointer',
-    transition: 'background 0.2s',
+  toolbarLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  toolbarLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: 500,
     flexShrink: 0,
   },
-  toggleKnob: {
-    position: 'absolute' as const,
-    width: 16,
-    height: 16,
-    background: 'white',
-    borderRadius: '50%',
-    top: 2,
-    left: 2,
-    transition: 'transform 0.2s',
+  formatTabs: {
+    display: 'flex',
+    gap: 4,
   },
-  mergeCard: {
+  formatTab: {
+    padding: '4px 12px',
+    borderRadius: 5,
+    border: '1px solid #DBEAFE',
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 0.15s',
+  },
+  toolbarRight: {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    border: '1px solid #DBEAFE',
-    cursor: 'pointer',
-    background: '#FFFFFF',
-    marginBottom: 16,
   },
+  checkLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 12,
+    color: '#1E3A8A',
+    cursor: 'pointer',
+    userSelect: 'none',
+  },
+  generateBtn: {
+    padding: '5px 14px',
+    borderRadius: 6,
+    border: 'none',
+    background: '#EFF6FF',
+    color: '#1E40AF',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+
+  // Editor
+  editorArea: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+    padding: '0 16px',
+  },
+  editorHeader: {
+    padding: '8px 0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editor: {
+    flex: 1,
+    width: '100%',
+    border: '1px solid #DBEAFE',
+    borderRadius: 8,
+    padding: 16,
+    fontSize: 13,
+    fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
+    color: '#1E3A8A',
+    background: '#FFFFFF',
+    resize: 'none' as const,
+    outline: 'none',
+    lineHeight: 1.7,
+    minHeight: 0,
+  },
+
+  // Footer
   footer: {
     display: 'flex',
     alignItems: 'center',
@@ -469,11 +747,11 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 12,
     borderTop: '1px solid #DBEAFE',
     background: '#FFFFFF',
-    marginTop: 'auto',
+    marginTop: 4,
   },
   footerBtn: {
     height: 36,
-    padding: '0 16px',
+    padding: '0 20px',
     borderRadius: 8,
     border: '1px solid #DBEAFE',
     fontSize: 13,
@@ -482,5 +760,22 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#E9EEF6',
     color: '#1E3A8A',
     fontFamily: 'inherit',
+  },
+
+  // Toast
+  toast: {
+    position: 'fixed',
+    bottom: 32,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#1E3A8A',
+    color: '#fff',
+    padding: '10px 24px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 500,
+    zIndex: 9999,
+    boxShadow: '0 4px 20px rgba(30, 64, 175, 0.3)',
+    animation: 'fadeIn 0.2s ease',
   },
 };

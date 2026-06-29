@@ -316,6 +316,7 @@ function createInitialState(): AppState {
       selectedEndpoints: ['api-get-user', 'api-create-user', 'api-update-user', 'api-delete-user', 'api-create-order', 'api-list-orders'],
       selectedGroups: ['group-users', 'group-orders'],
     },
+    exportContent: saved.exportContent || '',
     searchQuery: '',
   };
 }
@@ -358,7 +359,8 @@ type Action =
   | { type: 'RENAME_ENDPOINT'; payload: { endpointId: string; name: string } }
   | { type: 'SAVE_ENDPOINT' }
   | { type: 'GENERATE_RESPONSE_PARAMS' }
-  | { type: 'UPDATE_RESPONSE_PARAM'; payload: { paramId: string; field: string; value: string | boolean } };
+  | { type: 'UPDATE_RESPONSE_PARAM'; payload: { paramId: string; field: string; value: string | boolean } }
+  | { type: 'SET_EXPORT_CONTENT'; payload: string };
 
 // ---- Reducer ----
 
@@ -740,6 +742,9 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, groups: newGroups };
     }
 
+    case 'SET_EXPORT_CONTENT':
+      return { ...state, exportContent: action.payload };
+
     default:
       return state;
   }
@@ -783,6 +788,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
       response: state.response ?? undefined,
       requestHistory: state.requestHistory,
       exportConfig: state.exportConfig,
+      exportContent: state.exportContent,
     };
     saveData('app_state', toSave);
   }, [state]);

@@ -124,5 +124,6 @@ export interface AppState {
   requestHistory: { endpointId: string; response: ApiResponse }[];
   isRequesting: boolean;
   exportConfig: ExportConfig;
+  exportContent: string;
   searchQuery: string;
 }
