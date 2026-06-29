@@ -21,7 +21,7 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: rm -f package-lock.json && npm install --no-audit --no-fund
+        run: npm install
 
       - name: Build Vite + Electron TypeScript
         run: npm run build
@@ -59,7 +59,7 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: rm -f package-lock.json && npm install --no-audit --no-fund
+        run: npm install
 
       - name: Build Vite + Electron TypeScript
         run: npm run build
