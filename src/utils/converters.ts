@@ -35,7 +35,9 @@ export function mdToHtml(md: string): string {
         html += '<table>\n';
         inTable = true;
       }
-      const cells = line.split('|').filter(c => c.trim() !== '' || line.endsWith('|'));
+      // 去掉首尾的 | 再按 | 分割，避免首尾空字符串当作空列
+      const trimmed = line.replace(/^\|/, '').replace(/\|$/, '');
+      const cells = trimmed.split('|').map(c => c.trim());
       const isHeader =
         i + 1 < lines.length &&
         lines[i + 1].startsWith('|') &&
@@ -43,7 +45,7 @@ export function mdToHtml(md: string): string {
       const tag = isHeader ? 'th' : 'td';
       html += '<tr>';
       for (const cell of cells) {
-        html += `<${tag}>${inlineMdToHtml(cell.trim())}</${tag}>`;
+        html += `<${tag}>${inlineMdToHtml(cell)}</${tag}>`;
       }
       html += '</tr>\n';
       if (isHeader) i++;

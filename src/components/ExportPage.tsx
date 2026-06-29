@@ -24,7 +24,7 @@ const formats: { key: ExportFormat; icon: string; name: string }[] = [
 function generateMarkdown(
   groups: ApiGroup[],
   selectedEndpoints: string[],
-  opts: { includeParams: boolean; includeResponse: boolean; includeSchema: boolean },
+  opts: { includeParams: boolean; includeResponse: boolean; includeSchema: boolean; includeErrors: boolean },
 ): string {
   const lines: string[] = [];
   const now = new Date().toLocaleString('zh-CN');
@@ -32,6 +32,8 @@ function generateMarkdown(
   lines.push('# API 接口文档');
   lines.push('');
   lines.push(`> 生成时间: ${now} | 共 ${selectedEndpoints.length} 个接口`);
+  lines.push('');
+  lines.push('---');
   lines.push('');
 
   const selectedGroups = groups.filter(g =>
@@ -46,9 +48,8 @@ function generateMarkdown(
     lines.push('');
 
     for (const ep of eps) {
+      // ── 接口标题 + 描述 ──
       lines.push(`### ${escapeMd(ep.name)}`);
-      lines.push('');
-      lines.push(`\`${ep.method}\`  ${escapeMd(ep.url)}`);
       lines.push('');
 
       if (ep.description) {
@@ -56,10 +57,27 @@ function generateMarkdown(
         lines.push('');
       }
 
+      // ── 请求地址 ──
+      lines.push(`> **接口地址：** \`${ep.method}\` ${escapeMd(ep.url)}`);
+      lines.push('');
+
+      // ── 请求头 ──
+      if (ep.headers.length > 0) {
+        lines.push('**请求头**');
+        lines.push('');
+        lines.push('| 参数名 | 参数值 | 说明 |');
+        lines.push('|--------|--------|------|');
+        for (const h of ep.headers) {
+          lines.push(`| ${escapeMd(h.key)} | ${escapeMd(h.value)} | ${escapeMd(h.description)} |`);
+        }
+        lines.push('');
+      }
+
+      // ── 请求参数 ──
       if (opts.includeParams && ep.params.length > 0) {
         lines.push('**请求参数**');
         lines.push('');
-        lines.push('| 参数名 | 参数值 | 必填 | 描述 |');
+        lines.push('| 参数名 | 默认值 | 必填 | 说明 |');
         lines.push('|--------|--------|------|------|');
         for (const p of ep.params) {
           lines.push(
@@ -69,17 +87,7 @@ function generateMarkdown(
         lines.push('');
       }
 
-      if (ep.headers.length > 0) {
-        lines.push('**请求头**');
-        lines.push('');
-        lines.push('| 键 | 值 | 描述 |');
-        lines.push('|----|-----|------|');
-        for (const h of ep.headers) {
-          lines.push(`| ${escapeMd(h.key)} | ${escapeMd(h.value)} | ${escapeMd(h.description)} |`);
-        }
-        lines.push('');
-      }
-
+      // ── 请求示例 ──
       if (opts.includeResponse && ep.body && ep.bodyType !== 'none') {
         lines.push('**请求示例**');
         lines.push('');
@@ -90,7 +98,7 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // 请求体参数 Schema
+      // ── 请求体参数 Schema ──
       if (opts.includeSchema && ep.bodyParams && ep.bodyParams.length > 0) {
         lines.push('**请求体参数说明**');
         lines.push('');
@@ -100,7 +108,7 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // 响应参数 Schema
+      // ── 响应参数 Schema ──
       if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
         lines.push('**响应参数说明**');
         lines.push('');
@@ -110,7 +118,17 @@ function generateMarkdown(
         lines.push('');
       }
 
-      // 错误码说明
+      // ── 返回结果示例 ──
+      if (ep.responseExample) {
+        lines.push('**返回结果示例**');
+        lines.push('');
+        lines.push('```json');
+        lines.push(ep.responseExample);
+        lines.push('```');
+        lines.push('');
+      }
+
+      // ── 错误码 ──
       if (opts.includeErrors && ep.errorCodes && ep.errorCodes.length > 0) {
         lines.push('**错误码说明**');
         lines.push('');
@@ -224,6 +242,7 @@ export default function ExportPage() {
       includeParams: exportConfig.includeParams,
       includeResponse: exportConfig.includeResponse,
       includeSchema,
+      includeErrors: exportConfig.includeErrors,
     });
     const html = mdToHtml(md);
     setLocalHtml(html);

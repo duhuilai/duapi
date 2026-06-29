@@ -57,6 +57,7 @@ export interface ApiEndpoint {
   responseParams: ResponseParam[];
   bodyParams: ResponseParam[];
   errorCodes: ErrorCode[];
+  responseExample: string;
 }
 
 // 错误码定义
@@ -138,4 +139,5 @@ export interface AppState {
   exportConfig: ExportConfig;
   exportContent: string;
   searchQuery: string;
+  savedTick: number;
 }

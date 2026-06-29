@@ -358,15 +358,15 @@ function BodyEditor() {
           ) : (
             <div style={styles.schemaPanel}>
               <div style={{ display: 'flex', borderBottom: '2px solid #DBEAFE', padding: '6px 0', marginBottom: 4 }}>
-                <div style={{ width: bw.path, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                <div style={{ width: bw.path, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                   字段路径
                   <div style={resizeHandleStyle} onMouseDown={onBodyResize('path')} />
                 </div>
-                <div style={{ width: bw.type, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                <div style={{ width: bw.type, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                   类型
                   <div style={resizeHandleStyle} onMouseDown={onBodyResize('type')} />
                 </div>
-                <div style={{ width: bw.required, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', textAlign: 'center', position: 'relative' }}>
+                <div style={{ width: bw.required, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', textAlign: 'center', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                   必填
                   <div style={resizeHandleStyle} onMouseDown={onBodyResize('required')} />
                 </div>
@@ -420,7 +420,7 @@ function SchemaRow({
   return (
     <>
       <div style={{ display: 'flex', borderBottom: '1px solid #F1F5F9', padding: '3px 0', alignItems: 'center', minHeight: 28, fontSize: 11 }}>
-        <div style={{ width: widths.path, flexShrink: 0, paddingLeft: 8 + level * 16, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+        <div style={{ width: widths.path, flexShrink: 0, paddingLeft: 8 + level * 16, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', borderRight: '1px solid #E2E8F0' }}>
           <span style={{ color: '#64748B', marginRight: 4 }}>
             {level > 0 ? '└ ' : ''}
           </span>
@@ -428,7 +428,7 @@ function SchemaRow({
             {param.path.split('.').pop()}
           </code>
         </div>
-        <div style={{ width: widths.type, flexShrink: 0 }}>
+        <div style={{ width: widths.type, flexShrink: 0, borderRight: '1px solid #E2E8F0' }}>
           <span style={{
             display: 'inline-block',
             padding: '1px 6px',
@@ -441,7 +441,7 @@ function SchemaRow({
             {param.type}
           </span>
         </div>
-        <div style={{ width: widths.required, flexShrink: 0, textAlign: 'center' }}>
+        <div style={{ width: widths.required, flexShrink: 0, textAlign: 'center', borderRight: '1px solid #E2E8F0' }}>
           <input
             type="checkbox"
             checked={param.required}

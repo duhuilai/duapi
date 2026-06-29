@@ -34,9 +34,11 @@ function useDragger(options: {
       : container?.getBoundingClientRect().height ?? window.innerHeight;
 
     const onMouseMove = (ev: MouseEvent) => {
-      const delta = direction === 'vertical'
+      const rawDelta = direction === 'vertical'
         ? ev.clientX - startPos
         : ev.clientY - startPos;
+      // horizontal 拖拽方向：向上拖 → 响应面板增高
+      const delta = direction === 'horizontal' ? -rawDelta : rawDelta;
       const newSize = Math.min(maxSize, Math.max(minSize, sizeRef.current + delta));
       onResize(newSize);
     };
@@ -66,6 +68,19 @@ function WorkspacePage() {
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [responseHeight, setResponseHeight] = useState(340);
   const [showDesc, setShowDesc] = useState(false);
+  const [toast, setToast] = useState('');
+  const prevSavedTick = useRef(state.savedTick);
+
+  // 保存成功后显示 toast
+  useEffect(() => {
+    if (state.savedTick > prevSavedTick.current && prevSavedTick.current > 0) {
+      setToast('✓ 已保存');
+      const timer = setTimeout(() => setToast(''), 2000);
+      prevSavedTick.current = state.savedTick;
+      return () => clearTimeout(timer);
+    }
+    prevSavedTick.current = state.savedTick;
+  }, [state.savedTick]);
 
   const sidebarDragger = useDragger({
     direction: 'vertical',
@@ -106,7 +121,7 @@ function WorkspacePage() {
       <div style={styles.rightArea}>
         {/* 上半部分：请求调试 */}
         <div style={styles.requestArea}>
-          <RequestBar />
+          <RequestBar onSaved={() => {}} />
           {/* ── 接口描述 ── */}
           <div style={{
             display: 'flex',
@@ -181,6 +196,9 @@ function WorkspacePage() {
           <ResponsePanel />
         </div>
       </div>
+
+      {/* Toast 提示 */}
+      {toast && <div style={styles.toast}>{toast}</div>}
     </div>
   );
 }
@@ -259,5 +277,19 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'transparent',
     transition: 'background 0.15s',
     zIndex: 10,
+  },
+  toast: {
+    position: 'fixed',
+    bottom: 32,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#1E3A8A',
+    color: '#fff',
+    padding: '8px 20px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 500,
+    zIndex: 9999,
+    boxShadow: '0 4px 20px rgba(30, 64, 175, 0.3)',
   },
 };

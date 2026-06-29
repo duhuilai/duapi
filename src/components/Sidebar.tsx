@@ -148,14 +148,6 @@ export default function Sidebar() {
                 onClick={() => dispatch({ type: 'TOGGLE_GROUP', payload: group.id })}
               >▼</span>
 
-              {/* 图标 */}
-              <div
-                style={{ ...styles.groupIcon, background: group.iconColor }}
-                onClick={() => dispatch({ type: 'TOGGLE_GROUP', payload: group.id })}
-              >
-                {group.icon}
-              </div>
-
               {/* 分组名（双击重命名） */}
               {editingGroupId === group.id ? (
                 <input

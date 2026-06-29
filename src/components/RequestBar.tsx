@@ -1,10 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApi } from '../store/ApiContext';
 import type { HttpMethod } from '../types';
 
-export default function RequestBar() {
+export default function RequestBar({ onSaved }: { onSaved?: () => void }) {
   const { state, dispatch, resolveVars } = useApi();
   const methods: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    dispatch({ type: 'SAVE_ENDPOINT' });
+    setSaved(true);
+    onSaved?.();
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   const handleSend = async () => {
     dispatch({ type: 'SET_REQUESTING', payload: true });
@@ -60,6 +68,8 @@ export default function RequestBar() {
               timestamp: Date.now(),
             },
           });
+          // 同时保存响应示例到当前接口
+          dispatch({ type: 'SET_RESPONSE_EXAMPLE', payload: result.body });
         } else {
           dispatch({
             type: 'SET_RESPONSE',
@@ -100,6 +110,8 @@ export default function RequestBar() {
             timestamp: Date.now(),
           },
         });
+        // 同时保存响应示例到当前接口
+        dispatch({ type: 'SET_RESPONSE_EXAMPLE', payload: resBody });
       }
     } catch (err: any) {
       dispatch({
@@ -135,11 +147,16 @@ export default function RequestBar() {
         placeholder="输入请求 URL，使用 {{变量}} 语法..."
       />
       <button
-        style={styles.saveBtn}
-        onClick={() => dispatch({ type: 'SAVE_ENDPOINT' })}
+        style={{
+          ...styles.saveBtn,
+          background: saved ? '#DCFCE7' : '#E9EEF6',
+          color: saved ? '#16A34A' : '#1E40AF',
+          borderColor: saved ? '#16A34A' : '#DBEAFE',
+        }}
+        onClick={handleSave}
         title="Ctrl+S"
       >
-        保存
+        {saved ? '✓ 已保存' : '保存'}
       </button>
       <button
         style={{

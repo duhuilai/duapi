@@ -100,8 +100,11 @@ export default function ResponsePanel() {
 
   const renderParamRows = (params: ResponseParam[], depth = 0): React.ReactNode[] => {
     const colStyle = (col: string, extra: React.CSSProperties = {}): React.CSSProperties => ({
-      width: sw[col], flexShrink: 0, display: 'flex', alignItems: 'center', ...extra,
+      width: sw[col], flexShrink: 0, display: 'flex', alignItems: 'center', borderRight: '1px solid #E2E8F0', ...extra,
     });
+    const lastColStyle: React.CSSProperties = {
+      flex: 1, minWidth: 0, display: 'flex', alignItems: 'center',
+    };
     return params.flatMap(param => {
       const rows: React.ReactNode[] = [];
       rows.push(
@@ -120,7 +123,7 @@ export default function ResponsePanel() {
               style={{ cursor: 'pointer' }}
             />
           </div>
-          <div style={{ ...colStyle('desc'), minWidth: 0, flex: 1 }}>
+          <div style={lastColStyle}>
             <input
               style={descInput}
               type="text"
@@ -242,15 +245,15 @@ export default function ResponsePanel() {
             {responseParams.length > 0 && (
               <>
                 <div style={{ display: 'flex', borderBottom: '2px solid #DBEAFE', padding: '4px 0', marginBottom: 2 }}>
-                  <div style={{ width: sw.path, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', paddingLeft: 8, position: 'relative' }}>
+                  <div style={{ width: sw.path, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', paddingLeft: 8, position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                     字段路径
                     <div style={resizeHandleStyle} onMouseDown={onSchemaResize('path')} />
                   </div>
-                  <div style={{ width: sw.type, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative' }}>
+                  <div style={{ width: sw.type, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                     类型
                     <div style={resizeHandleStyle} onMouseDown={onSchemaResize('type')} />
                   </div>
-                  <div style={{ width: sw.required, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', textAlign: 'center', position: 'relative' }}>
+                  <div style={{ width: sw.required, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', textAlign: 'center', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                     必填
                     <div style={resizeHandleStyle} onMouseDown={onSchemaResize('required')} />
                   </div>
@@ -282,15 +285,15 @@ export default function ResponsePanel() {
               {errorCodes.length > 0 && (
                 <>
                   <div style={{ display: 'flex', borderBottom: '1px solid #DBEAFE', padding: '3px 0', marginBottom: 2 }}>
-                    <div style={{ width: ew.code, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                    <div style={{ width: ew.code, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                       错误码
                       <div style={resizeHandleStyle} onMouseDown={onEcResize('code')} />
                     </div>
-                    <div style={{ width: ew.http, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                    <div style={{ width: ew.http, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                       HTTP
                       <div style={resizeHandleStyle} onMouseDown={onEcResize('http')} />
                     </div>
-                    <div style={{ width: ew.msg, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative' }}>
+                    <div style={{ width: ew.msg, flexShrink: 0, fontWeight: 600, fontSize: 10, color: '#64748B', padding: '0 4px', position: 'relative', borderRight: '1px solid #E2E8F0' }}>
                       错误信息
                       <div style={resizeHandleStyle} onMouseDown={onEcResize('msg')} />
                     </div>
@@ -302,7 +305,7 @@ export default function ResponsePanel() {
                   <div style={{ maxHeight: 220, overflow: 'auto' }}>
                     {errorCodes.map(ec => (
                       <div key={ec.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #F1F5F9', padding: '2px 0', minHeight: 28 }}>
-                        <div style={{ width: ew.code, flexShrink: 0, padding: '0 4px' }}>
+                        <div style={{ width: ew.code, flexShrink: 0, padding: '0 4px', borderRight: '1px solid #E2E8F0' }}>
                           <input
                             style={ecInput}
                             value={ec.code}
@@ -310,7 +313,7 @@ export default function ResponsePanel() {
                             placeholder="如 1001"
                           />
                         </div>
-                        <div style={{ width: ew.http, flexShrink: 0, padding: '0 4px' }}>
+                        <div style={{ width: ew.http, flexShrink: 0, padding: '0 4px', borderRight: '1px solid #E2E8F0' }}>
                           <select
                             style={ecSelect}
                             value={ec.httpStatus}
@@ -321,7 +324,7 @@ export default function ResponsePanel() {
                             ))}
                           </select>
                         </div>
-                        <div style={{ width: ew.msg, flexShrink: 0, padding: '0 4px' }}>
+                        <div style={{ width: ew.msg, flexShrink: 0, padding: '0 4px', borderRight: '1px solid #E2E8F0' }}>
                           <input
                             style={ecInput}
                             value={ec.message}

@@ -71,6 +71,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
       {
         id: 'api-create-user',
@@ -91,6 +92,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
       {
         id: 'api-update-user',
@@ -113,6 +115,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
       {
         id: 'api-delete-user',
@@ -134,6 +137,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
     ],
   },
@@ -163,6 +167,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
       {
         id: 'api-list-orders',
@@ -186,6 +191,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
     ],
   },
@@ -215,6 +221,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
       {
         id: 'api-query-payment',
@@ -236,6 +243,7 @@ const defaultGroups: ApiGroup[] = [
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       },
     ],
   },
@@ -335,6 +343,7 @@ function createInitialState(): AppState {
     },
     exportContent: saved.exportContent || '',
     searchQuery: '',
+    savedTick: 0,
   };
 }
 
@@ -383,7 +392,8 @@ type Action =
   | { type: 'UPDATE_BODY_PARAM'; payload: { paramId: string; field: string; value: string | boolean } }
   | { type: 'ADD_ERROR_CODE' }
   | { type: 'UPDATE_ERROR_CODE'; payload: { codeId: string; field: string; value: string | number } }
-  | { type: 'DELETE_ERROR_CODE'; payload: string };
+  | { type: 'DELETE_ERROR_CODE'; payload: string }
+  | { type: 'SET_RESPONSE_EXAMPLE'; payload: string };
 
 // ---- Reducer ----
 
@@ -652,6 +662,7 @@ function reducer(state: AppState, action: Action): AppState {
         responseParams: [],
         bodyParams: [],
         errorCodes: [],
+        responseExample: '',
       };
       const newGroups = state.groups.map(g =>
         g.id === gid ? { ...g, collapsed: false, endpoints: [...g.endpoints, newEp] } : g
@@ -670,6 +681,7 @@ function reducer(state: AppState, action: Action): AppState {
           bodyType: 'none',
           preScript: '',
           testScript: '',
+          description: '',
         },
       };
     }
@@ -730,13 +742,14 @@ function reducer(state: AppState, action: Action): AppState {
                 preScript: request.preScript,
                 testScript: request.testScript,
                 description: request.description,
-                bodyParams: e.bodyParams,
-                errorCodes: e.errorCodes,
+                bodyParams: e.bodyParams || [],
+                errorCodes: e.errorCodes || [],
+                responseExample: e.responseExample || '',
               }
             : e
         ),
       }));
-      return { ...state, groups: newGroups };
+      return { ...state, groups: newGroups, savedTick: state.savedTick + 1 };
     }
 
     case 'GENERATE_RESPONSE_PARAMS': {
@@ -830,7 +843,7 @@ function reducer(state: AppState, action: Action): AppState {
       const newGroups = groups.map(g => ({
         ...g,
         endpoints: g.endpoints.map(e =>
-          e.id === activeEndpointId ? { ...e, errorCodes: [...e.errorCodes, newCode] } : e
+          e.id === activeEndpointId ? { ...e, errorCodes: [...(e.errorCodes || []), newCode] } : e
         ),
       }));
       return { ...state, groups: newGroups };
@@ -845,7 +858,7 @@ function reducer(state: AppState, action: Action): AppState {
           e.id === activeEndpointId
             ? {
                 ...e,
-                errorCodes: e.errorCodes.map(c =>
+                errorCodes: (e.errorCodes || []).map(c =>
                   c.id === action.payload.codeId
                     ? { ...c, [action.payload.field]: action.payload.value }
                     : c
@@ -864,8 +877,20 @@ function reducer(state: AppState, action: Action): AppState {
         ...g,
         endpoints: g.endpoints.map(e =>
           e.id === activeEndpointId
-            ? { ...e, errorCodes: e.errorCodes.filter(c => c.id !== action.payload) }
+            ? { ...e, errorCodes: (e.errorCodes || []).filter(c => c.id !== action.payload) }
             : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'SET_RESPONSE_EXAMPLE': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, responseExample: action.payload } : e
         ),
       }));
       return { ...state, groups: newGroups };
@@ -915,6 +940,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
       requestHistory: state.requestHistory,
       exportConfig: state.exportConfig,
       exportContent: state.exportContent,
+      savedTick: state.savedTick,
     };
     saveData('app_state', toSave);
   }, [state]);

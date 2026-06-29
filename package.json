@@ -1,6 +1,6 @@
 {
   "name": "duapi",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "duapi - 离线 API 测试工具",
   "author": "duhuilai <18513930063@163.com>",
   "main": "dist-electron/main/index.js",
