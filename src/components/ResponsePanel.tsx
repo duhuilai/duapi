@@ -337,13 +337,12 @@ function SyntaxHighlight({ json }: { json: unknown }) {
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: 380,
-    minWidth: 380,
+    width: '100%',
+    height: '100%',
     background: '#FFFFFF',
-    borderLeft: '1px solid #DBEAFE',
+    borderTop: '1px solid #DBEAFE',
     display: 'flex',
     flexDirection: 'column',
-    height: '100%',
   },
   header: {
     display: 'flex',
