@@ -2,9 +2,42 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import type {
   AppState, ApiGroup, ApiEndpoint, HttpMethod,
   UrlParam, RequestHeader, AuthType, AuthConfig,
-  Environment, ApiResponse, ExportFormat,
+  Environment, ApiResponse, ExportFormat, ResponseParam,
 } from '../types';
 import { loadData, saveData, generateId } from '../utils/storage';
+
+// ---- JSON 解析工具 ----
+function inferType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function parseJsonToParams(json: unknown, prefix = ''): ResponseParam[] {
+  if (json === null || json === undefined) return [];
+
+  if (typeof json === 'object' && !Array.isArray(json)) {
+    const obj = json as Record<string, unknown>;
+    return Object.entries(obj).map(([key, value]) => {
+      const fullPath = prefix ? `${prefix}.${key}` : key;
+      const type = inferType(value);
+      const children = (type === 'object' || type === 'array') ? parseJsonToParams(
+        type === 'array' && Array.isArray(value) && value.length > 0 ? value[0] : value,
+        type === 'array' ? `${fullPath}[]` : fullPath
+      ) : undefined;
+      return {
+        id: generateId(),
+        path: fullPath,
+        type: children && children.length > 0 ? `${type}(${children.length})` : type,
+        description: '',
+        required: true,
+        children: children && children.length > 0 ? children : undefined,
+      };
+    });
+  }
+
+  return [];
+}
 
 // ---- Initial Data ----
 
@@ -35,6 +68,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '// 设置变量\npm.variables.set("timestamp", new Date().toISOString());',
         testScript: '// 状态码测试\npm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
         description: '根据用户ID获取用户详细信息',
+        responseParams: [],
       },
       {
         id: 'api-create-user',
@@ -52,6 +86,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: 'pm.test("Status code is 201", function () {\n    pm.response.to.have.status(201);\n});',
         description: '创建新用户',
+        responseParams: [],
       },
       {
         id: 'api-update-user',
@@ -71,6 +106,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: '',
         description: '更新用户信息',
+        responseParams: [],
       },
       {
         id: 'api-delete-user',
@@ -89,6 +125,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: 'pm.test("Status code is 204", function () {\n    pm.response.to.have.status(204);\n});',
         description: '删除指定用户',
+        responseParams: [],
       },
     ],
   },
@@ -115,6 +152,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: 'pm.test("创建成功", function () {\n    pm.response.to.have.status(201);\n});',
         description: '创建新订单',
+        responseParams: [],
       },
       {
         id: 'api-list-orders',
@@ -135,6 +173,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: 'pm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
         description: '分页查询订单列表',
+        responseParams: [],
       },
     ],
   },
@@ -161,6 +200,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: 'pm.test("支付发起成功", function () {\n    pm.response.to.have.status(200);\n});',
         description: '发起支付请求',
+        responseParams: [],
       },
       {
         id: 'api-query-payment',
@@ -179,6 +219,7 @@ const defaultGroups: ApiGroup[] = [
         preScript: '',
         testScript: 'pm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
         description: '查询支付结果',
+        responseParams: [],
       },
     ],
   },
@@ -315,7 +356,9 @@ type Action =
   | { type: 'ADD_ENDPOINT'; payload: string }        // groupId
   | { type: 'DELETE_ENDPOINT'; payload: { groupId: string; endpointId: string } }
   | { type: 'RENAME_ENDPOINT'; payload: { endpointId: string; name: string } }
-  | { type: 'SAVE_ENDPOINT' };
+  | { type: 'SAVE_ENDPOINT' }
+  | { type: 'GENERATE_RESPONSE_PARAMS' }
+  | { type: 'UPDATE_RESPONSE_PARAM'; payload: { paramId: string; field: string; value: string | boolean } };
 
 // ---- Reducer ----
 
@@ -576,6 +619,7 @@ function reducer(state: AppState, action: Action): AppState {
         preScript: '',
         testScript: '',
         description: '',
+        responseParams: [],
       };
       const newGroups = state.groups.map(g =>
         g.id === gid ? { ...g, collapsed: false, endpoints: [...g.endpoints, newEp] } : g
@@ -654,6 +698,43 @@ function reducer(state: AppState, action: Action): AppState {
                 testScript: request.testScript,
               }
             : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'GENERATE_RESPONSE_PARAMS': {
+      const { activeEndpointId, response, groups } = state;
+      if (!activeEndpointId || !response) return state;
+      let parsed: unknown;
+      try { parsed = JSON.parse(response.body); } catch { return state; }
+      const params = parseJsonToParams(parsed);
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, responseParams: params } : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'UPDATE_RESPONSE_PARAM': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const updateParam = (list: ResponseParam[]): ResponseParam[] =>
+        list.map(p => {
+          if (p.id === action.payload.paramId) {
+            return { ...p, [action.payload.field]: action.payload.value };
+          }
+          if (p.children) {
+            return { ...p, children: updateParam(p.children) };
+          }
+          return p;
+        });
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, responseParams: updateParam(e.responseParams) } : e
         ),
       }));
       return { ...state, groups: newGroups };

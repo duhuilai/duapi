@@ -30,6 +30,16 @@ export interface AuthConfig {
   basicPassword?: string;
 }
 
+// 响应参数说明
+export interface ResponseParam {
+  id: string;
+  path: string;       // JSON 路径，如 "data.name"、"data.items[].id"
+  type: string;       // 类型：string / number / boolean / object / array / null
+  description: string;
+  required: boolean;
+  children?: ResponseParam[];
+}
+
 // API 端点定义
 export interface ApiEndpoint {
   id: string;
@@ -44,6 +54,7 @@ export interface ApiEndpoint {
   preScript: string;
   testScript: string;
   description: string;
+  responseParams: ResponseParam[];
 }
 
 // API 分组

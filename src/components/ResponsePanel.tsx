@@ -1,12 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import { useApi } from '../store/ApiContext';
+import type { ResponseParam } from '../types';
 
-type RespTab = 'body' | 'headers' | 'cookies';
+type RespTab = 'body' | 'headers' | 'cookies' | 'schema';
 
 export default function ResponsePanel() {
-  const { state } = useApi();
-  const { response, isRequesting } = state;
+  const { state, dispatch } = useApi();
+  const { response, isRequesting, groups, activeEndpointId } = state;
   const [activeTab, setActiveTab] = useState<RespTab>('body');
+
+  const activeEndpoint = useMemo(
+    () => groups.flatMap(g => g.endpoints).find(e => e.id === activeEndpointId),
+    [groups, activeEndpointId],
+  );
+
+  const responseParams = activeEndpoint?.responseParams ?? [];
 
   const statusColor = useMemo(() => {
     if (!response) return '#64748B';
@@ -36,6 +44,51 @@ export default function ResponsePanel() {
     }
   };
 
+  const handleGenerateSchema = () => {
+    dispatch({ type: 'GENERATE_RESPONSE_PARAMS' });
+  };
+
+  const handleUpdateParam = (paramId: string, field: string, value: string | boolean) => {
+    dispatch({ type: 'UPDATE_RESPONSE_PARAM', payload: { paramId, field, value } });
+  };
+
+  const renderParamRows = (params: ResponseParam[], depth = 0): React.ReactNode[] => {
+    return params.flatMap(param => {
+      const rows: React.ReactNode[] = [];
+      rows.push(
+        <div key={param.id} style={schemaRow(depth)}>
+          <div style={{ ...schemaCell('path'), paddingLeft: 8 + depth * 16 }}>
+            <code style={pathCode}>{param.path || '(unnamed)'}</code>
+          </div>
+          <div style={schemaCell('type')}>
+            <span style={typeBadge(param.type)}>{param.type}</span>
+          </div>
+          <div style={schemaCell('required')}>
+            <input
+              type="checkbox"
+              checked={param.required}
+              onChange={e => handleUpdateParam(param.id, 'required', e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+          </div>
+          <div style={schemaCell('desc')}>
+            <input
+              style={descInput}
+              type="text"
+              value={param.description}
+              onChange={e => handleUpdateParam(param.id, 'description', e.target.value)}
+              placeholder="添加说明..."
+            />
+          </div>
+        </div>
+      );
+      if (param.children && param.children.length > 0) {
+        rows.push(...renderParamRows(param.children, depth + 1));
+      }
+      return rows;
+    });
+  };
+
   return (
     <aside style={styles.panel}>
       <div style={styles.header}>
@@ -53,18 +106,25 @@ export default function ResponsePanel() {
       </div>
 
       <div style={styles.tabBar}>
-        {(['body', 'headers', 'cookies'] as RespTab[]).map(tab => (
+        {([
+          ['body', 'Body'],
+          ['headers', 'Headers'],
+          ['cookies', 'Cookies'],
+          ['schema', 'Schema'],
+        ] as [RespTab, string][]).map(([tab, label]) => (
           <div
             key={tab}
             style={{
               ...styles.tab,
-              flex: 1, textAlign: 'center',
+              flex: tab === 'schema' ? 'none' : 1,
+              width: tab === 'schema' ? 64 : undefined,
+              textAlign: 'center' as const,
               color: activeTab === tab ? '#1E40AF' : '#64748B',
               borderBottomColor: activeTab === tab ? '#1E40AF' : 'transparent',
             }}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'body' ? 'Body' : tab === 'headers' ? 'Headers' : 'Cookies'}
+            {label}
           </div>
         ))}
       </div>
@@ -76,7 +136,7 @@ export default function ResponsePanel() {
           </div>
         )}
         {activeTab === 'body' && !response && !isRequesting && (
-          <div style={{ color: '#94A3B8', fontSize: 12, textAlign: 'center', padding: 40 }}>
+          <div style={styles.emptyTip}>
             点击「发送」按钮发送请求
           </div>
         )}
@@ -91,10 +151,47 @@ export default function ResponsePanel() {
             ))}
           </div>
         )}
+        {activeTab === 'headers' && !response && (
+          <div style={styles.emptyTip}>暂无响应</div>
+        )}
 
         {activeTab === 'cookies' && (
-          <div style={{ color: '#94A3B8', fontSize: 12, textAlign: 'center', padding: 40 }}>
+          <div style={styles.emptyTip}>
             Cookie 管理功能即将上线
+          </div>
+        )}
+
+        {activeTab === 'schema' && (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <button
+              style={styles.generateBtn}
+              onClick={handleGenerateSchema}
+              disabled={!response}
+              title={!response ? '请先发送请求获取响应' : '从当前响应 JSON 生成字段说明'}
+            >
+              📋 从响应生成
+            </button>
+
+            {responseParams.length === 0 && (
+              <div style={styles.emptyTip}>
+                点击「从响应生成」按钮，<br />
+                自动解析返回的 JSON 结构
+              </div>
+            )}
+
+            {responseParams.length > 0 && (
+              <>
+                <div style={schemaHeader}>
+                  <span style={{ ...schemaCell('path'), fontWeight: 600, fontSize: 10, color: '#64748B', paddingLeft: 8 }}>字段路径</span>
+                  <span style={{ ...schemaCell('type'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>类型</span>
+                  <span style={{ ...schemaCell('required'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>必填</span>
+                  <span style={{ ...schemaCell('desc'), fontWeight: 600, fontSize: 10, color: '#64748B' }}>说明</span>
+                </div>
+                <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                  {renderParamRows(responseParams)}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -103,15 +200,89 @@ export default function ResponsePanel() {
         <div style={styles.footer}>
           <span>⏱ {formatTime(response.responseTime)}</span>
           <span>📦 {formatSize(response.body)}</span>
+          {responseParams.length > 0 && (
+            <span>🔖 {responseParams.length} 字段</span>
+          )}
         </div>
       )}
     </aside>
   );
 }
 
-// Simple syntax-highlighted JSON renderer
+// ---- Schema 内部组件样式 ----
+
+const schemaHeader: React.CSSProperties = {
+  display: 'flex',
+  borderBottom: '2px solid #DBEAFE',
+  padding: '4px 0',
+  marginBottom: 2,
+};
+
+const schemaRow = (depth: number): React.CSSProperties => ({
+  display: 'flex',
+  borderBottom: '1px solid #F1F5F9',
+  padding: '2px 0',
+  alignItems: 'center',
+  minHeight: 30,
+});
+
+const schemaCell = (kind: 'path' | 'type' | 'required' | 'desc'): React.CSSProperties => ({
+  ...({
+    path: { flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, fontSize: 11 },
+    type: { width: 72, flexShrink: 0, fontSize: 11, display: 'flex', alignItems: 'center' },
+    required: { width: 36, flexShrink: 0, fontSize: 11, display: 'flex', justifyContent: 'center', alignItems: 'center' },
+    desc: { flex: 3, minWidth: 0, fontSize: 11 },
+  }[kind]),
+});
+
+const pathCode: React.CSSProperties = {
+  fontSize: 11,
+  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+  color: '#1E40AF',
+  background: '#EFF6FF',
+  padding: '1px 4px',
+  borderRadius: 3,
+};
+
+const typeBadge = (type: string): React.CSSProperties => ({
+  fontSize: 10,
+  fontWeight: 500,
+  padding: '1px 5px',
+  borderRadius: 4,
+  background:
+    type.startsWith('string') ? '#DCFCE7' :
+    type.startsWith('number') || type.startsWith('integer') ? '#FEF3C7' :
+    type.startsWith('boolean') ? '#EDE9FE' :
+    type.startsWith('array') ? '#DBEAFE' :
+    type.startsWith('object') ? '#FEE2E2' :
+    type === 'null' ? '#F1F5F9' :
+    '#F8FAFC',
+  color:
+    type.startsWith('string') ? '#16A34A' :
+    type.startsWith('number') || type.startsWith('integer') ? '#D97706' :
+    type.startsWith('boolean') ? '#7C3AED' :
+    type.startsWith('array') ? '#1E40AF' :
+    type.startsWith('object') ? '#DC2626' :
+    type === 'null' ? '#64748B' :
+    '#1E3A8A',
+});
+
+const descInput: React.CSSProperties = {
+  width: '100%',
+  height: 22,
+  border: '1px solid #E2E8F0',
+  borderRadius: 3,
+  padding: '0 4px',
+  fontSize: 11,
+  color: '#1E3A8A',
+  outline: 'none',
+  background: '#FFFFFF',
+};
+
+// ---- SyntaxHighlight ----
+
 function SyntaxHighlight({ json }: { json: unknown }) {
-  const render = (value: unknown, key?: string, indent = 0): React.ReactNode => {
+  const render = (value: unknown, _key?: string, indent = 0): React.ReactNode => {
     const pad = '  '.repeat(indent);
 
     if (value === null) return <span style={{ color: '#7C3AED' }}>null</span>;
@@ -162,10 +333,12 @@ function SyntaxHighlight({ json }: { json: unknown }) {
   return <div style={{ whiteSpace: 'pre' }}>{render(json)}</div>;
 }
 
+// ---- Styles ----
+
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: 320,
-    minWidth: 320,
+    width: 380,
+    minWidth: 380,
     background: '#FFFFFF',
     borderLeft: '1px solid #DBEAFE',
     display: 'flex',
@@ -196,11 +369,11 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #DBEAFE',
   },
   tab: {
-    padding: '6px',
+    padding: '6px 8px',
     fontSize: 11,
     cursor: 'pointer',
     borderBottom: '2px solid transparent',
-    userSelect: 'none',
+    userSelect: 'none' as const,
   },
   body: {
     flex: 1,
@@ -208,6 +381,24 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 12,
     overflow: 'auto',
     minHeight: 0,
+  },
+  emptyTip: {
+    color: '#94A3B8',
+    fontSize: 12,
+    textAlign: 'center' as const,
+    padding: 40,
+  },
+  generateBtn: {
+    width: '100%',
+    height: 30,
+    background: '#1E40AF',
+    border: 'none',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 500,
+    color: 'white',
+    cursor: 'pointer',
+    marginBottom: 10,
   },
   footer: {
     display: 'flex',
@@ -217,5 +408,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: '#64748B',
     background: '#FFFFFF',
+    gap: 8,
+    flexWrap: 'wrap' as const,
   },
 };
