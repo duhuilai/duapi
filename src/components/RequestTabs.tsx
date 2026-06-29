@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApi } from '../store/ApiContext';
+import type { ResponseParam } from '../types';
 
 type TabName = 'params' | 'headers' | 'auth' | 'body' | 'prescript' | 'tests';
 
@@ -281,9 +282,16 @@ function BodyEditor() {
     { key: 'raw' as const, label: 'Raw' },
   ];
 
+  // 获取当前接口的 bodyParams
+  const activeEndpoint = state.groups
+    .flatMap(g => g.endpoints)
+    .find(e => e.id === state.activeEndpointId);
+  const bodyParams = activeEndpoint?.bodyParams || [];
+  const [schemaOpen, setSchemaOpen] = useState(false);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', gap: 4, padding: '8px 0' }}>
+      <div style={{ display: 'flex', gap: 4, padding: '8px 0', alignItems: 'center' }}>
         {bodyTypes.map(bt => (
           <button
             key={bt.key}
@@ -298,17 +306,143 @@ function BodyEditor() {
             {bt.label}
           </button>
         ))}
+        {state.request.bodyType === 'json' && (
+          <>
+            <span style={{ flex: 1 }} />
+            <button
+              style={styles.schemaToggleBtn}
+              onClick={() => dispatch({ type: 'GENERATE_BODY_PARAMS' })}
+              title="从当前 JSON 内容解析生成参数列表"
+            >
+              📋 从 JSON 生成
+            </button>
+            <button
+              style={{
+                ...styles.schemaToggleBtn,
+                background: schemaOpen ? '#DBEAFE' : 'transparent',
+              }}
+              onClick={() => setSchemaOpen(!schemaOpen)}
+            >
+              {schemaOpen ? '收起' : '展开'} 参数说明 ({bodyParams.length})
+            </button>
+          </>
+        )}
       </div>
+
       {state.request.bodyType !== 'none' && (
         <textarea
-          style={styles.editor}
+          style={{
+            ...styles.editor,
+            flex: schemaOpen && bodyParams.length > 0 ? 'none' : 1,
+            minHeight: schemaOpen && bodyParams.length > 0 ? 120 : 250,
+          }}
           value={state.request.body}
           onChange={e => dispatch({ type: 'SET_BODY', payload: e.target.value })}
           placeholder={state.request.bodyType === 'json' ? '{\n  "key": "value"\n}' : '请求体内容...'}
           spellCheck={false}
         />
       )}
+
+      {/* Body Schema 表格 */}
+      {schemaOpen && state.request.bodyType === 'json' && (
+        <div style={styles.schemaPanel}>
+          {bodyParams.length === 0 ? (
+            <div style={styles.schemaEmpty}>
+              暂无参数说明，点击上方「📋 从 JSON 生成」按钮自动解析
+            </div>
+          ) : (
+            <table style={styles.schemaTable}>
+              <thead>
+                <tr>
+                  <th style={{ ...styles.schemaTh, width: '35%' }}>字段路径</th>
+                  <th style={{ ...styles.schemaTh, width: '12%' }}>类型</th>
+                  <th style={{ ...styles.schemaTh, width: '8%' }}>必填</th>
+                  <th style={{ ...styles.schemaTh, width: '45%' }}>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bodyParams.map(p => (
+                  <SchemaRow
+                    key={p.id}
+                    param={p}
+                    onUpdate={(paramId, field, value) =>
+                      dispatch({ type: 'UPDATE_BODY_PARAM', payload: { paramId, field, value } })
+                    }
+                    level={0}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function SchemaRow({
+  param,
+  onUpdate,
+  level,
+}: {
+  param: ResponseParam;
+  onUpdate: (paramId: string, field: string, value: string | boolean) => void;
+  level: number;
+}) {
+  const typeColors: Record<string, string> = {
+    string: '#16A34A',
+    number: '#D97706',
+    boolean: '#7C3AED',
+    object: '#1E40AF',
+    array: '#DC2626',
+    null: '#94A3B8',
+  };
+  const typeBase = param.type.replace(/\(\d+\)$/, '').trim();
+  const tc = typeColors[typeBase] || '#64748B';
+
+  return (
+    <>
+      <tr>
+        <td style={{ ...styles.schemaTd, paddingLeft: 8 + level * 16 }}>
+          <span style={{ color: '#64748B', marginRight: 4 }}>
+            {level > 0 ? '└ ' : ''}
+          </span>
+          {param.path.split('.').pop()}
+        </td>
+        <td style={styles.schemaTd}>
+          <span style={{
+            display: 'inline-block',
+            padding: '1px 6px',
+            borderRadius: 3,
+            background: tc + '18',
+            color: tc,
+            fontSize: 10,
+            fontWeight: 600,
+          }}>
+            {param.type}
+          </span>
+        </td>
+        <td style={styles.schemaTd}>
+          <input
+            type="checkbox"
+            checked={param.required}
+            onChange={e => onUpdate(param.id, 'required', e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+        </td>
+        <td style={styles.schemaTd}>
+          <input
+            style={styles.schemaDescInput}
+            value={param.description}
+            onChange={e => onUpdate(param.id, 'description', e.target.value)}
+            placeholder="输入字段说明..."
+          />
+        </td>
+      </tr>
+      {param.children?.map(child => (
+        <SchemaRow key={child.id} param={child} onUpdate={onUpdate} level={level + 1} />
+      ))}
+    </>
   );
 }
 
@@ -493,5 +627,65 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#1E3A8A',
     resize: 'none' as const,
     outline: 'none',
+  },
+  // Body Schema
+  schemaToggleBtn: {
+    padding: '4px 10px',
+    border: '1px solid #DBEAFE',
+    borderRadius: 4,
+    background: 'transparent',
+    color: '#1E40AF',
+    fontSize: 11,
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 0.15s',
+  },
+  schemaPanel: {
+    flex: 1,
+    overflow: 'auto',
+    border: '1px solid #DBEAFE',
+    borderRadius: 6,
+    marginTop: 8,
+    background: '#FFFFFF',
+  },
+  schemaEmpty: {
+    padding: 24,
+    textAlign: 'center' as const,
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  schemaTable: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    tableLayout: 'fixed' as const,
+  },
+  schemaTh: {
+    textAlign: 'left' as const,
+    padding: '5px 8px',
+    background: '#E9EEF6',
+    fontSize: 11,
+    fontWeight: 500,
+    color: '#64748B',
+    position: 'sticky' as const,
+    top: 0,
+    borderBottom: '1px solid #DBEAFE',
+  },
+  schemaTd: {
+    padding: '4px 8px',
+    borderBottom: '1px solid #F1F5F9',
+    fontSize: 12,
+    color: '#1E3A8A',
+    verticalAlign: 'middle' as const,
+  },
+  schemaDescInput: {
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
+    fontSize: 12,
+    color: '#64748B',
+    outline: 'none',
+    fontFamily: 'inherit',
+    padding: '2px 0',
   },
 };

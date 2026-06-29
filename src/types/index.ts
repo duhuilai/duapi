@@ -55,6 +55,7 @@ export interface ApiEndpoint {
   testScript: string;
   description: string;
   responseParams: ResponseParam[];
+  bodyParams: ResponseParam[];
 }
 
 // API 分组

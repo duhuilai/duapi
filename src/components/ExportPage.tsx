@@ -90,6 +90,17 @@ function generateMarkdown(
         lines.push('');
       }
 
+      // 请求体参数 Schema
+      if (opts.includeSchema && ep.bodyParams && ep.bodyParams.length > 0) {
+        lines.push('**请求体参数说明**');
+        lines.push('');
+        lines.push('| 字段路径 | 类型 | 必填 | 说明 |');
+        lines.push('|----------|------|------|------|');
+        renderSchemaRows(ep.bodyParams, lines, '');
+        lines.push('');
+      }
+
+      // 响应参数 Schema
       if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
         lines.push('**响应参数说明**');
         lines.push('');

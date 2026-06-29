@@ -69,6 +69,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: '// 状态码测试\npm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
         description: '根据用户ID获取用户详细信息',
         responseParams: [],
+        bodyParams: [],
       },
       {
         id: 'api-create-user',
@@ -87,6 +88,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: 'pm.test("Status code is 201", function () {\n    pm.response.to.have.status(201);\n});',
         description: '创建新用户',
         responseParams: [],
+        bodyParams: [],
       },
       {
         id: 'api-update-user',
@@ -107,6 +109,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: '',
         description: '更新用户信息',
         responseParams: [],
+        bodyParams: [],
       },
       {
         id: 'api-delete-user',
@@ -126,6 +129,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: 'pm.test("Status code is 204", function () {\n    pm.response.to.have.status(204);\n});',
         description: '删除指定用户',
         responseParams: [],
+        bodyParams: [],
       },
     ],
   },
@@ -153,6 +157,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: 'pm.test("创建成功", function () {\n    pm.response.to.have.status(201);\n});',
         description: '创建新订单',
         responseParams: [],
+        bodyParams: [],
       },
       {
         id: 'api-list-orders',
@@ -174,6 +179,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: 'pm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
         description: '分页查询订单列表',
         responseParams: [],
+        bodyParams: [],
       },
     ],
   },
@@ -201,6 +207,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: 'pm.test("支付发起成功", function () {\n    pm.response.to.have.status(200);\n});',
         description: '发起支付请求',
         responseParams: [],
+        bodyParams: [],
       },
       {
         id: 'api-query-payment',
@@ -220,6 +227,7 @@ const defaultGroups: ApiGroup[] = [
         testScript: 'pm.test("Status code is 200", function () {\n    pm.response.to.have.status(200);\n});',
         description: '查询支付结果',
         responseParams: [],
+        bodyParams: [],
       },
     ],
   },
@@ -360,7 +368,9 @@ type Action =
   | { type: 'SAVE_ENDPOINT' }
   | { type: 'GENERATE_RESPONSE_PARAMS' }
   | { type: 'UPDATE_RESPONSE_PARAM'; payload: { paramId: string; field: string; value: string | boolean } }
-  | { type: 'SET_EXPORT_CONTENT'; payload: string };
+  | { type: 'SET_EXPORT_CONTENT'; payload: string }
+  | { type: 'GENERATE_BODY_PARAMS' }
+  | { type: 'UPDATE_BODY_PARAM'; payload: { paramId: string; field: string; value: string | boolean } };
 
 // ---- Reducer ----
 
@@ -622,6 +632,7 @@ function reducer(state: AppState, action: Action): AppState {
         testScript: '',
         description: '',
         responseParams: [],
+        bodyParams: [],
       };
       const newGroups = state.groups.map(g =>
         g.id === gid ? { ...g, collapsed: false, endpoints: [...g.endpoints, newEp] } : g
@@ -698,6 +709,7 @@ function reducer(state: AppState, action: Action): AppState {
                 bodyType: request.bodyType,
                 preScript: request.preScript,
                 testScript: request.testScript,
+                bodyParams: e.bodyParams,
               }
             : e
         ),
@@ -744,6 +756,43 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_EXPORT_CONTENT':
       return { ...state, exportContent: action.payload };
+
+    case 'GENERATE_BODY_PARAMS': {
+      const { activeEndpointId, request: req, groups } = state;
+      if (!activeEndpointId || req.bodyType !== 'json') return state;
+      let parsed: unknown;
+      try { parsed = JSON.parse(req.body); } catch { return state; }
+      const params = parseJsonToParams(parsed);
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, bodyParams: params } : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'UPDATE_BODY_PARAM': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const updateParam = (list: ResponseParam[]): ResponseParam[] =>
+        list.map(p => {
+          if (p.id === action.payload.paramId) {
+            return { ...p, [action.payload.field]: action.payload.value };
+          }
+          if (p.children) {
+            return { ...p, children: updateParam(p.children) };
+          }
+          return p;
+        });
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, bodyParams: updateParam(e.bodyParams) } : e
+        ),
+      }));
+      return { ...state, groups: newGroups };
+    }
 
     default:
       return state;
