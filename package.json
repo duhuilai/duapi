@@ -54,11 +54,17 @@
         {
           "target": "dmg",
           "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
         }
       ],
       "icon": "public/icon.png",
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "hardenedRuntime": false
     },
     "dmg": {
       "contents": [
