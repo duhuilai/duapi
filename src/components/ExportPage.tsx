@@ -123,7 +123,7 @@ function generateMarkdown(
 
         // 优先 Body Schema 参数
         if (hasBodyParams) {
-          renderBodyParamRows(ep.bodyParams!, lines, '');
+          renderBodyParamRows(ep.bodyParams!, lines);
         } else if (hasUrlParams) {
           for (const p of ep.params) {
             lines.push(
@@ -135,16 +135,14 @@ function generateMarkdown(
       }
 
       // ── 响应示例 ──
-      if (ep.responseExample) {
-        lines.push('响应示例');
-        lines.push('');
-        lines.push('响应编码：');
-        lines.push('');
-        lines.push('```json');
-        lines.push(ep.responseExample);
-        lines.push('```');
-        lines.push('');
-      }
+      lines.push('响应示例');
+      lines.push('');
+      lines.push('响应编码：');
+      lines.push('');
+      lines.push('```json');
+      lines.push(ep.responseExample || '{}');
+      lines.push('```');
+      lines.push('');
 
       // ── 响应成功参数说明 ──
       if (opts.includeSchema && ep.responseParams && ep.responseParams.length > 0) {
@@ -152,7 +150,7 @@ function generateMarkdown(
         lines.push('');
         lines.push('| 字段路径 | 类型 | 必填 | 说明 |');
         lines.push('|----------|------|------|------|');
-        renderSchemaRows(ep.responseParams, lines, '');
+        renderSchemaRows(ep.responseParams, lines);
         lines.push('');
       }
 
@@ -180,26 +178,28 @@ function generateMarkdown(
 }
 
 /** 渲染 Body Schema 参数行（模板列：字段名/字段说明/字段类型/是否必填） */
-function renderBodyParamRows(params: ResponseParam[], lines: string[], indent: string) {
+function renderBodyParamRows(params: ResponseParam[], lines: string[]) {
   for (const p of params) {
-    const displayPath = indent + p.path.split('.').pop()!;
+    // 使用完整路径体现层级（如 list[].status）
+    const displayPath = p.path;
     lines.push(
-      `| ${displayPath} | ${escapeMd(p.description)} | ${p.type} | ${p.required ? '是' : '否'} |`,
+      `| ${escapeMd(displayPath)} | ${escapeMd(p.description)} | ${p.type} | ${p.required ? '是' : '否'} |`,
     );
     if (p.children) {
-      renderBodyParamRows(p.children, lines, indent + '  ');
+      renderBodyParamRows(p.children, lines);
     }
   }
 }
 
-function renderSchemaRows(params: ResponseParam[], lines: string[], indent: string) {
+function renderSchemaRows(params: ResponseParam[], lines: string[]) {
   for (const p of params) {
-    const displayPath = indent + p.path.split('.').pop()!;
+    // 使用完整路径体现层级（如 list[].status）
+    const displayPath = p.path;
     lines.push(
-      `| ${displayPath} | ${p.type} | ${p.required ? '是' : '否'} | ${escapeMd(p.description)} |`,
+      `| ${escapeMd(displayPath)} | ${p.type} | ${p.required ? '是' : '否'} | ${escapeMd(p.description)} |`,
     );
     if (p.children) {
-      renderSchemaRows(p.children, lines, indent + '  ');
+      renderSchemaRows(p.children, lines);
     }
   }
 }
