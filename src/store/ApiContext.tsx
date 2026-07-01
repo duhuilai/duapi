@@ -411,6 +411,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         activeEndpointId: action.payload,
+        response: null,
         request: {
           method: endpoint.method,
           url: endpoint.url,
