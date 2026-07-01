@@ -394,6 +394,7 @@ type Action =
   | { type: 'UPDATE_ERROR_CODE'; payload: { codeId: string; field: string; value: string | number } }
   | { type: 'DELETE_ERROR_CODE'; payload: string }
   | { type: 'SET_RESPONSE_EXAMPLE'; payload: string }
+  | { type: 'SAVE_LAST_RESPONSE'; payload: ApiResponse | null }
   | { type: 'REORDER_ENDPOINTS'; payload: { groupId: string; fromIndex: number; toIndex: number } };
 
 // ---- Reducer ----
@@ -411,7 +412,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         activeEndpointId: action.payload,
-        response: null,
+        response: endpoint.lastResponse ?? null,
         request: {
           method: endpoint.method,
           url: endpoint.url,
@@ -432,6 +433,18 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_RESPONSE':
       return { ...state, response: action.payload };
+
+    case 'SAVE_LAST_RESPONSE': {
+      const { activeEndpointId, groups } = state;
+      if (!activeEndpointId) return state;
+      const newGroups = groups.map(g => ({
+        ...g,
+        endpoints: g.endpoints.map(e =>
+          e.id === activeEndpointId ? { ...e, lastResponse: action.payload } : e
+        ),
+      }));
+      return { ...state, response: action.payload, groups: newGroups };
+    }
 
     case 'SET_REQUESTING':
       return { ...state, isRequesting: action.payload };

@@ -58,6 +58,7 @@ export interface ApiEndpoint {
   bodyParams: ResponseParam[];
   errorCodes: ErrorCode[];
   responseExample: string;
+  lastResponse?: ApiResponse | null;  // 上次响应结果，切换接口时恢复
 }
 
 // 错误码定义

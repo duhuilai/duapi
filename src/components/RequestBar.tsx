@@ -57,31 +57,29 @@ export default function RequestBar({ onSaved }: { onSaved?: () => void }) {
         });
 
         if (result.success) {
-          dispatch({
-            type: 'SET_RESPONSE',
-            payload: {
-              body: result.body,
-              status: result.status,
-              statusText: result.statusText,
-              headers: result.headers,
-              responseTime: result.responseTime,
-              timestamp: Date.now(),
-            },
-          });
+          const responsePayload = {
+            body: result.body,
+            status: result.status,
+            statusText: result.statusText,
+            headers: result.headers,
+            responseTime: result.responseTime,
+            timestamp: Date.now(),
+          };
+          dispatch({ type: 'SET_RESPONSE', payload: responsePayload });
+          dispatch({ type: 'SAVE_LAST_RESPONSE', payload: responsePayload });
           // 同时保存响应示例到当前接口
           dispatch({ type: 'SET_RESPONSE_EXAMPLE', payload: result.body });
         } else {
-          dispatch({
-            type: 'SET_RESPONSE',
-            payload: {
-              body: JSON.stringify({ error: result.error }, null, 2),
-              status: 0,
-              statusText: 'Error',
-              headers: {},
-              responseTime: 0,
-              timestamp: Date.now(),
-            },
-          });
+          const responsePayload = {
+            body: JSON.stringify({ error: result.error }, null, 2),
+            status: 0,
+            statusText: 'Error',
+            headers: {},
+            responseTime: 0,
+            timestamp: Date.now(),
+          };
+          dispatch({ type: 'SET_RESPONSE', payload: responsePayload });
+          dispatch({ type: 'SAVE_LAST_RESPONSE', payload: responsePayload });
         }
       } else {
         // Browser fallback (dev mode without Electron)
@@ -99,32 +97,30 @@ export default function RequestBar({ onSaved }: { onSaved?: () => void }) {
         const resHeaders: Record<string, string> = {};
         res.headers.forEach((v, k) => { resHeaders[k] = v; });
 
-        dispatch({
-          type: 'SET_RESPONSE',
-          payload: {
+        const responsePayload = {
             body: resBody,
             status: res.status,
             statusText: res.statusText,
             headers: resHeaders,
             responseTime,
             timestamp: Date.now(),
-          },
-        });
+          };
+        dispatch({ type: 'SET_RESPONSE', payload: responsePayload });
+        dispatch({ type: 'SAVE_LAST_RESPONSE', payload: responsePayload });
         // 同时保存响应示例到当前接口
         dispatch({ type: 'SET_RESPONSE_EXAMPLE', payload: resBody });
       }
     } catch (err: any) {
-      dispatch({
-        type: 'SET_RESPONSE',
-        payload: {
-          body: JSON.stringify({ error: err.message || '请求失败' }, null, 2),
-          status: 0,
-          statusText: 'Error',
-          headers: {},
-          responseTime: 0,
-          timestamp: Date.now(),
-        },
-      });
+      const responsePayload = {
+        body: JSON.stringify({ error: err.message || '请求失败' }, null, 2),
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        responseTime: 0,
+        timestamp: Date.now(),
+      };
+      dispatch({ type: 'SET_RESPONSE', payload: responsePayload });
+      dispatch({ type: 'SAVE_LAST_RESPONSE', payload: responsePayload });
     } finally {
       dispatch({ type: 'SET_REQUESTING', payload: false });
     }
