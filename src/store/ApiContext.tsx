@@ -393,7 +393,8 @@ type Action =
   | { type: 'ADD_ERROR_CODE' }
   | { type: 'UPDATE_ERROR_CODE'; payload: { codeId: string; field: string; value: string | number } }
   | { type: 'DELETE_ERROR_CODE'; payload: string }
-  | { type: 'SET_RESPONSE_EXAMPLE'; payload: string };
+  | { type: 'SET_RESPONSE_EXAMPLE'; payload: string }
+  | { type: 'REORDER_ENDPOINTS'; payload: { groupId: string; fromIndex: number; toIndex: number } };
 
 // ---- Reducer ----
 
@@ -893,6 +894,19 @@ function reducer(state: AppState, action: Action): AppState {
           e.id === activeEndpointId ? { ...e, responseExample: action.payload } : e
         ),
       }));
+      return { ...state, groups: newGroups };
+    }
+
+    case 'REORDER_ENDPOINTS': {
+      const { groupId, fromIndex, toIndex } = action.payload;
+      const newGroups = state.groups.map(g => {
+        if (g.id !== groupId) return g;
+        const eps = [...g.endpoints];
+        if (fromIndex < 0 || fromIndex >= eps.length || toIndex < 0 || toIndex >= eps.length) return g;
+        const [moved] = eps.splice(fromIndex, 1);
+        eps.splice(toIndex, 0, moved);
+        return { ...g, endpoints: eps };
+      });
       return { ...state, groups: newGroups };
     }
 

@@ -22,6 +22,11 @@ export default function Sidebar() {
   // hover 状态，用于显示操作按钮
   const [hoverGroupId, setHoverGroupId] = useState<string | null>(null);
   const [hoverEndpointId, setHoverEndpointId] = useState<string | null>(null);
+  // 拖拽排序状态
+  const [dragEpId, setDragEpId] = useState<string | null>(null);
+  const [dragGroupId, setDragGroupId] = useState<string | null>(null);
+  const [dragOverEpId, setDragOverEpId] = useState<string | null>(null);
+  const [dragOverPos, setDragOverPos] = useState<'before' | 'after'>('before');
 
   const groupInputRef = useRef<HTMLInputElement>(null);
   const epInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +101,50 @@ export default function Sidebar() {
     if (window.confirm(`确定删除接口「${epName}」吗？`)) {
       dispatch({ type: 'DELETE_ENDPOINT', payload: { groupId, endpointId: epId } });
     }
+  };
+
+  // ---- 拖拽排序 ----
+  const handleDragStart = (e: React.DragEvent, epId: string, groupId: string) => {
+    setDragEpId(epId);
+    setDragGroupId(groupId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', epId);
+  };
+
+  const handleDragOverEp = (e: React.DragEvent, epId: string, groupId: string) => {
+    if (!dragEpId || dragEpId === epId || dragGroupId !== groupId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragOverEpId(epId);
+    setDragOverPos(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+  };
+
+  const handleDropOnEp = (e: React.DragEvent, targetEpId: string, groupId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragEpId || dragEpId === targetEpId || dragGroupId !== groupId) {
+      resetDragState();
+      return;
+    }
+    const group = state.groups.find(g => g.id === groupId);
+    if (!group) { resetDragState(); return; }
+    const fromIndex = group.endpoints.findIndex(ep => ep.id === dragEpId);
+    const targetIndex = group.endpoints.findIndex(ep => ep.id === targetEpId);
+    if (fromIndex === -1 || targetIndex === -1) { resetDragState(); return; }
+    const rawToIndex = targetIndex + (dragOverPos === 'after' ? 1 : 0);
+    const toIndex = fromIndex < rawToIndex ? rawToIndex - 1 : rawToIndex;
+    if (fromIndex !== toIndex) {
+      dispatch({ type: 'REORDER_ENDPOINTS', payload: { groupId, fromIndex, toIndex } });
+    }
+    resetDragState();
+  };
+
+  const resetDragState = () => {
+    setDragEpId(null);
+    setDragGroupId(null);
+    setDragOverEpId(null);
+    setDragOverPos('before');
   };
 
   return (
@@ -203,6 +252,11 @@ export default function Sidebar() {
                     <div
                       key={ep.id}
                       data-search-match={isSearchMatch || undefined}
+                      draggable
+                      onDragStart={e => handleDragStart(e, ep.id, group.id)}
+                      onDragOver={e => handleDragOverEp(e, ep.id, group.id)}
+                      onDrop={e => handleDropOnEp(e, ep.id, group.id)}
+                      onDragEnd={resetDragState}
                       style={{
                         ...styles.apiItem,
                         background: isActive ? '#DBEAFE'
@@ -211,11 +265,21 @@ export default function Sidebar() {
                           : 'transparent',
                         outline: isSearchMatch ? '2px solid #F59E0B' : undefined,
                         outlineOffset: -2,
+                        opacity: dragEpId === ep.id ? 0.4 : 1,
+                        borderTop: dragOverEpId === ep.id && dragOverPos === 'before' ? '2px solid #1E40AF' : undefined,
+                        borderBottom: dragOverEpId === ep.id && dragOverPos === 'after' ? '2px solid #1E40AF' : undefined,
                       }}
                       onClick={() => dispatch({ type: 'SELECT_ENDPOINT', payload: ep.id })}
                       onMouseEnter={() => setHoverEndpointId(ep.id)}
                       onMouseLeave={() => setHoverEndpointId(null)}
                     >
+                      {/* 拖拽手柄 */}
+                      <span style={{
+                        ...styles.dragHandle,
+                        opacity: isHover && editingEndpointId !== ep.id ? 0.4 : 0,
+                        cursor: 'grab',
+                      }}>⠿</span>
+
                       <span style={{ ...styles.methodBadge, background: mc.bg, color: mc.text }}>
                         {ep.method}
                       </span>
@@ -467,6 +531,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10,
     fontWeight: 600,
     flexShrink: 0,
+  },
+  dragHandle: {
+    fontSize: 12,
+    color: '#64748B',
+    flexShrink: 0,
+    width: 12,
+    textAlign: 'center',
+    transition: 'opacity 0.15s',
+    userSelect: 'none',
   },
   apiName: {
     fontSize: 12,
