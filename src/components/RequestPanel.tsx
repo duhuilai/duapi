@@ -6,6 +6,10 @@ import { ParamsDocs } from "./ParamsDocs";
 
 type Tab = "params" | "headers" | "body" | "auth";
 
+function isTab(v: string | undefined): v is Tab {
+  return v === "params" || v === "headers" || v === "body" || v === "auth";
+}
+
 export function RequestPanel({
   api,
   onChange,
@@ -21,7 +25,11 @@ export function RequestPanel({
   sending: boolean;
   notify?: (msg: string, kind?: "info" | "success" | "error") => void;
 }) {
-  const [tab, setTab] = useState<Tab>("params");
+  const [tab, setTab] = useState<Tab>(isTab(api.requestTab) ? api.requestTab : "params");
+
+  useEffect(() => {
+    setTab(isTab(api.requestTab) ? api.requestTab : "params");
+  }, [api.id]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
@@ -75,7 +83,14 @@ export function RequestPanel({
 
       <div className="tabs">
         {(["params", "headers", "body", "auth"] as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+          <button
+            key={t}
+            className={tab === t ? "active" : ""}
+            onClick={() => {
+              setTab(t);
+              onChange({ requestTab: t });
+            }}
+          >
             {LABELS[t]}
           </button>
         ))}

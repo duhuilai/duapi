@@ -59,6 +59,7 @@ export interface ApiItem {
   requestDocs: ParamDoc[];
   responseDocs: ParamDoc[];
   lastResponse: SavedResponse | null;
+  requestTab?: "params" | "headers" | "body" | "auth";
   updatedAt: string;
   createdAt: string;
 }

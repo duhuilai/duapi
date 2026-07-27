@@ -88,6 +88,7 @@ pub struct ApiItem {
     pub request_docs: Vec<ParamDoc>,
     pub response_docs: Vec<ParamDoc>,
     pub last_response: Option<SavedResponse>,
+    pub request_tab: Option<String>,
     pub updated_at: String,
     pub created_at: String,
 }
@@ -115,6 +116,7 @@ impl Default for ApiItem {
             request_docs: vec![],
             response_docs: vec![],
             last_response: None,
+            request_tab: None,
             updated_at: String::new(),
             created_at: String::new(),
         }
