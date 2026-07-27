@@ -9,21 +9,21 @@ function escapeHtml(s: string): string {
 }
 
 const BASE_CSS = `
-:root { --primary:#1E40AF; }
-body { font-family: 'Segoe UI','Microsoft YaHei',system-ui,sans-serif; color:#1e293b; max-width: 960px; margin: 24px auto; padding: 0 16px; line-height:1.6; }
-h1 { color:#1E40AF; border-bottom:2px solid #DBEAFE; padding-bottom:8px; }
-h2 { color:#1E40AF; margin-top:28px; }
-h3 { color:#334155; }
+body { font-family: 'Segoe UI','Microsoft YaHei',Arial,sans-serif; color:#1e293b; max-width: 960px; margin: 24px auto; padding: 0 16px; line-height:1.6; font-size:14px; }
+h1 { color:#1E40AF; border-bottom:2px solid #DBEAFE; padding-bottom:8px; font-size:26px; }
+h2 { color:#1E40AF; margin-top:28px; font-size:20px; }
+h3 { color:#334155; margin-top:22px; font-size:16px; }
 table { border-collapse: collapse; width: 100%; margin: 12px 0; }
 th, td { border:1px solid #cbd5e1; padding:6px 10px; text-align:left; vertical-align:top; font-size:13px; }
-th { background:#eff6ff; }
-code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-family: Consolas,'Courier New',monospace; }
+th { background:#eff6ff; font-weight:700; }
+code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-family: Consolas,'Courier New',monospace; font-size:13px; }
 pre { background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; overflow:auto; }
 pre code { background:transparent; padding:0; }
-.method-badge { color:#fff; padding:2px 10px; border-radius:5px; font-weight:700; font-size:12px; margin-right:6px; }
+.method-badge { color:#ffffff; padding:2px 10px; border-radius:5px; font-weight:700; font-size:12px; margin-right:6px; }
 .meta { color:#475569; }
 .muted { color:#94a3b8; }
 hr { border:none; border-top:1px solid #e2e8f0; margin:20px 0; }
+.empty { color:#94a3b8; font-style:italic; }
 `;
 
 export function exportHtml(title: string, content: string): string {
@@ -33,10 +33,25 @@ export function exportHtml(title: string, content: string): string {
 }
 
 export function exportWord(title: string, content: string): string {
-  return `<?xml version="1.0" encoding="utf-8"?>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8">
-<xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml>
+  // Word 2003 XML/HTML round-trip format. The extra <meta> ProgId/Generator
+  // tags are required so Microsoft Word opens this as a Word document instead
+  // of displaying the raw HTML source.
+  return `<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="ProgId" content="Word.Document" />
+<meta name="Generator" content="Microsoft Word 15" />
+<meta name="Originator" content="Microsoft Word 15" />
+<title>${escapeHtml(title)}</title>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
+</w:WordDocument>
+</xml>
 <style>${BASE_CSS}</style>
 </head>
 <body>

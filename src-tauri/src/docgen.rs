@@ -134,6 +134,49 @@ fn params_table(docs: &[ParamDoc]) -> String {
     )
 }
 
+fn kv_table(items: &[crate::models::KeyValue], cols: (&str, &str)) -> String {
+    let active: Vec<_> = items.iter().filter(|i| !i.key.is_empty()).collect();
+    if active.is_empty() {
+        return "<p><em>无</em></p>".into();
+    }
+    let mut rows = String::new();
+    for i in active {
+        rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td></tr>",
+            esc(&i.key),
+            esc(&i.value)
+        ));
+    }
+    format!(
+        "<table><thead><tr><th>{}</th><th>{}</th></tr></thead><tbody>{rows}</tbody></table>",
+        cols.0, cols.1
+    )
+}
+
+fn auth_html(auth: &crate::models::AuthData) -> String {
+    if auth.auth_type == "none" || auth.auth_type.is_empty() {
+        return "<p><em>无</em></p>".into();
+    }
+    let mut rows = String::new();
+    rows.push_str(&format!("<tr><td>认证类型</td><td>{}</td></tr>", esc(&auth.auth_type)));
+    match auth.auth_type.as_str() {
+        "bearer" => {
+            rows.push_str(&format!("<tr><td>Token</td><td><code>{}</code></td></tr>", esc(&auth.token)));
+        }
+        "basic" => {
+            rows.push_str(&format!("<tr><td>用户名</td><td>{}</td></tr>", esc(&auth.username)));
+            rows.push_str(&format!("<tr><td>密码</td><td>{}</td></tr>", if auth.password.is_empty() { "-" } else { "******" }));
+        }
+        "apikey" => {
+            rows.push_str(&format!("<tr><td>Key</td><td>{}</td></tr>", esc(&auth.key)));
+            rows.push_str(&format!("<tr><td>Value</td><td>{}</td></tr>", esc(&auth.value)));
+            rows.push_str(&format!("<tr><td>位置</td><td>{}</td></tr>", if auth.add_to == "query" { "Query" } else { "Header" }));
+        }
+        _ => {}
+    }
+    format!("<table><thead><tr><th>项</th><th>值</th></tr></thead><tbody>{rows}</tbody></table>")
+}
+
 /// Build the initial HTML content of a generated document.
 /// `apis` must already be in the desired (user-sorted) order.
 pub fn build_doc_html(title: &str, apis: &[&ApiItem]) -> String {
@@ -169,19 +212,34 @@ pub fn build_doc_html(title: &str, apis: &[&ApiItem]) -> String {
             html.push_str(&format!("<p>{}</p>", esc(api.description.trim())));
         }
 
+        // Path params
+        let path_params: Vec<&crate::models::KeyValue> =
+            api.path_params.iter().filter(|p| !p.key.is_empty()).collect();
+        if !path_params.is_empty() {
+            html.push_str("<h3>Path 参数</h3>");
+            html.push_str(&kv_table(&api.path_params, ("参数", "值示例")));
+        }
+
         // Query params
         let query: Vec<&crate::models::KeyValue> =
             api.query.iter().filter(|q| !q.key.is_empty()).collect();
         if !query.is_empty() {
-            html.push_str("<h3>Query 参数</h3><table><thead><tr><th>参数</th><th>值示例</th></tr></thead><tbody>");
-            for q in query {
-                html.push_str(&format!(
-                    "<tr><td>{}</td><td>{}</td></tr>",
-                    esc(&q.key),
-                    esc(&q.value)
-                ));
-            }
-            html.push_str("</tbody></table>");
+            html.push_str("<h3>Query 参数</h3>");
+            html.push_str(&kv_table(&api.query, ("参数", "值示例")));
+        }
+
+        // Headers
+        let headers: Vec<&crate::models::KeyValue> =
+            api.headers.iter().filter(|h| !h.key.is_empty()).collect();
+        if !headers.is_empty() {
+            html.push_str("<h3>请求头</h3>");
+            html.push_str(&kv_table(&api.headers, ("Header", "值示例")));
+        }
+
+        // Auth
+        if api.auth.auth_type != "none" && !api.auth.auth_type.is_empty() {
+            html.push_str("<h3>授权信息</h3>");
+            html.push_str(&auth_html(&api.auth));
         }
 
         // Request params
