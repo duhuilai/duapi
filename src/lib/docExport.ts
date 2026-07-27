@@ -1,5 +1,6 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
+import htmlDocx from "html-docx-js";
 
 function escapeHtml(s: string): string {
   return s
@@ -32,33 +33,26 @@ export function exportHtml(title: string, content: string): string {
   )}</title><style>${BASE_CSS}</style></head><body>${content}</body></html>`;
 }
 
-export function exportWord(title: string, content: string): string {
-  // Word 2003 XML/HTML round-trip format. The extra <meta> ProgId/Generator
-  // tags are required so Microsoft Word opens this as a Word document instead
-  // of displaying the raw HTML source.
-  return `<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-<meta name="ProgId" content="Word.Document" />
-<meta name="Generator" content="Microsoft Word 15" />
-<meta name="Originator" content="Microsoft Word 15" />
-<title>${escapeHtml(title)}</title>
-<xml>
-<w:WordDocument>
-<w:View>Print</w:View>
-<w:Zoom>100</w:Zoom>
-<w:DoNotOptimizeForBrowser/>
-</w:WordDocument>
-</xml>
-<style>${BASE_CSS}</style>
-</head>
-<body>
-<h1>${escapeHtml(title)}</h1>
-${content}
-</body>
-</html>`;
+// Convert a Blob to a base64 string (for passing binary data through Tauri).
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = (reader.result as string) || "";
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Generate a real .docx (Office Open XML) as a base64 string from the HTML
+// content. This is the format Word opens natively, so no raw HTML leaks.
+export async function exportWord(title: string, content: string): Promise<string> {
+  const html = exportHtml(title, content);
+  const blob = htmlDocx.asBlob(html, { title });
+  return await blobToBase64(blob);
 }
 
 // ---------- HTML -> Markdown ----------
@@ -169,6 +163,21 @@ async function pickAndWrite(
   return true;
 }
 
+async function pickAndWriteBinary(
+  filename: string,
+  content: string,
+  ext: string,
+  label: string
+): Promise<boolean> {
+  const path = await save({
+    defaultPath: filename,
+    filters: [{ name: label, extensions: [ext] }],
+  });
+  if (!path) return false;
+  await api.writeBinaryFile(path, content);
+  return true;
+}
+
 export async function exportAsHtml(title: string, content: string) {
   const ok = await pickAndWrite(
     `${title}.html`,
@@ -180,10 +189,11 @@ export async function exportAsHtml(title: string, content: string) {
 }
 
 export async function exportAsWord(title: string, content: string) {
-  const ok = await pickAndWrite(
-    `${title}.doc`,
-    exportWord(title, content),
-    "doc",
+  const b64 = await exportWord(title, content);
+  const ok = await pickAndWriteBinary(
+    `${title}.docx`,
+    b64,
+    "docx",
     "Word 文档"
   );
   return ok;

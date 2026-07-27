@@ -54,6 +54,8 @@ export const api = {
 
   writeTextFile: (path: string, content: string) =>
     invoke<void>("write_text_file", { path, content }),
+  writeBinaryFile: (path: string, content: string) =>
+    invoke<void>("write_binary_file", { path, content }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
 
   getVersion: () => invoke<string>("get_version"),

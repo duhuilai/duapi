@@ -5,6 +5,7 @@ mod models;
 mod store;
 mod update;
 
+use base64::Engine;
 use models::*;
 use store::AppState;
 use tauri::{Manager, State};
@@ -463,6 +464,14 @@ fn write_text_file(path: String, content: String) -> Result<()> {
 }
 
 #[tauri::command]
+fn write_binary_file(path: String, content: String) -> Result<()> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(content.trim())
+        .map_err(|e| format!("解码文件失败: {e}"))?;
+    std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
+}
+
+#[tauri::command]
 fn read_text_file(path: String) -> Result<String> {
     std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))
 }
@@ -526,6 +535,7 @@ pub fn run() {
             import_selection,
             import_from_format,
             write_text_file,
+            write_binary_file,
             read_text_file,
             check_update_cmd,
             download_update_cmd,
