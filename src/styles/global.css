@@ -319,8 +319,8 @@ input.input:focus, textarea.input:focus, select.input:focus { border-color: var(
 .pd-hint { color: var(--muted); font-size: 12px; flex: 1; min-width: 220px; }
 .pd-actions { display: flex; gap: 2px; justify-content: center; white-space: nowrap; }
 .pd-actions .btn.sm { padding: 2px 6px; font-size: 11px; }
-.pd-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.pd-table th { background: var(--panel); color: var(--text-soft); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); font-weight: 600; position: sticky; top: 0; }
+.pd-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+.pd-table th { background: var(--panel); color: var(--text-soft); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); font-weight: 600; position: sticky; top: 0; z-index: 2; }
 .pd-table th:last-child { border-right: none; }
 .pd-table td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: 4px 6px; vertical-align: top; background: #fff; }
 .pd-table td:last-child { border-right: none; }
