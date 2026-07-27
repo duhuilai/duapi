@@ -31,14 +31,46 @@ export function ParamsDocs({
   const [error, setError] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  // Ref holds the dragged row id for the whole drag gesture, independent of
-  // React re-renders / dataTransfer quirks, so onDrop can always read it back.
+  // Refs hold drag state for the whole gesture, independent of React re-renders,
+  // so the mouseup handler can always read back the correct ids.
   const dragIdRef = useRef<string | null>(null);
+  const overIdRef = useRef<string | null>(null);
 
   const clearDrag = () => {
     dragIdRef.current = null;
+    overIdRef.current = null;
     setDragId(null);
     setOverId(null);
+  };
+
+  // Mouse-based drag (not HTML5 DnD) — deterministic across all web engines and
+  // only triggered from the grip handle, so inputs keep normal text selection.
+  const startDrag = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    dragIdRef.current = id;
+    setDragId(id);
+    const rowIdAt = (x: number, y: number): string | null => {
+      const el = document.elementFromPoint(x, y);
+      const tr = el?.closest("tr[data-id]") as HTMLElement | null;
+      return tr?.getAttribute("data-id") ?? null;
+    };
+    const onMove = (ev: MouseEvent) => {
+      const over = rowIdAt(ev.clientX, ev.clientY);
+      if (over !== overIdRef.current) {
+        overIdRef.current = over;
+        setOverId(over);
+      }
+    };
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const over = rowIdAt(ev.clientX, ev.clientY);
+      const from = dragIdRef.current;
+      if (from && over && from !== over) reorder(from, over);
+      clearDrag();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
   const update = (id: string, patch: Partial<ParamDoc>) =>
@@ -184,41 +216,14 @@ export function ParamsDocs({
               {docs.map((d, i) => (
                 <tr
                   key={d.id}
+                  data-id={d.id}
                   className={(dragId === d.id ? "dragging " : "") + (overId === d.id && dragId !== d.id ? "drag-over" : "")}
-                  draggable
-                  onDragStart={(e) => {
-                    // Only start a drag when the gesture originates from the grip
-                    // handle; otherwise let the browser handle normal text selection
-                    // inside inputs (cancel the row drag).
-                    const t = e.target as HTMLElement;
-                    if (!t.closest(".pd-grip")) {
-                      e.preventDefault();
-                      return;
-                    }
-                    dragIdRef.current = d.id;
-                    e.dataTransfer.setData("text/plain", d.id);
-                    e.dataTransfer.effectAllowed = "move";
-                    setDragId(d.id);
-                  }}
-                  onDragEnter={(e) => {
-                    e.preventDefault();
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    if (overId !== d.id) setOverId(d.id);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const fromId = dragIdRef.current || e.dataTransfer.getData("text/plain") || dragId;
-                    if (fromId) reorder(fromId, d.id);
-                    clearDrag();
-                  }}
-                  onDragEnd={() => {
-                    clearDrag();
-                  }}
                 >
-                  <td className="pd-grip" title="拖拽调整顺序">
+                  <td
+                    className="pd-grip"
+                    title="拖拽调整顺序"
+                    onMouseDown={(e) => startDrag(e, d.id)}
+                  >
                     <span className="grip">⠿</span>
                   </td>
                   <td>
