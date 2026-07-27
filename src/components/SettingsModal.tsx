@@ -50,7 +50,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const download = async () => {
     if (!info?.downloadUrl) return;
     const dir = await tempDir();
-    const path = await join(dir, "duapi-setup.exe");
+    // Derive the local file name from the asset URL so the correct installer
+    // extension is used on every platform (.exe on Windows, .dmg on macOS, …).
+    const urlName = info.downloadUrl.split("/").pop() || "duapi-update";
+    const path = await join(dir, urlName);
     setTarget(path);
     setDownloading(true);
     setPercent(0);

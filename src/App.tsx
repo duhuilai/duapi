@@ -5,7 +5,7 @@ import { RequestPanel } from "./components/RequestPanel";
 import { ResponsePanel } from "./components/ResponsePanel";
 import { DocManager } from "./components/DocManager";
 import { SettingsModal } from "./components/SettingsModal";
-import { Toasts } from "./components/ui";
+import { Toasts, PromptModal } from "./components/ui";
 import { api } from "./lib/api";
 import type { ApiItem, ResponseData, SavedResponse } from "./types";
 
@@ -53,6 +53,7 @@ export default function App() {
   const [genSignal, setGenSignal] = useState(0);
   const [respWidth, setRespWidth] = useState(380);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [apiPrompt, setApiPrompt] = useState<string | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   // Mirror editingApi so onSend can read the latest value when constructing the
   // auto-save payload (avoids losing edits made while the request is in flight).
@@ -240,12 +241,9 @@ export default function App() {
                     apis={data.apis}
                     onSelect={onSelectApi}
                     onClose={closeApiTab}
-                    onAdd={async () => {
+                    onAdd={() => {
                       const folderId = selectedFolderId ?? data.folders[0]?.id;
-                      if (folderId) {
-                        const a = await addApi(folderId, "未命名接口");
-                        if (a) onSelectApi(a.id);
-                      }
+                      if (folderId) setApiPrompt(folderId);
                     }}
                   />
                   <RequestPanel
@@ -273,10 +271,7 @@ export default function App() {
                 folderId={selectedFolderId}
                 apis={folderApis(selectedFolderId)}
                 onOpenApi={onSelectApi}
-                onAddApi={async () => {
-                  const a = await addApi(selectedFolderId, "未命名接口");
-                  if (a) onSelectApi(a.id);
-                }}
+                onAddApi={() => setApiPrompt(selectedFolderId)}
                 onGenerate={() => quickGenerate(selectedFolderId)}
                 onMove={moveApi}
                 onDup={dupApi}
@@ -301,6 +296,19 @@ export default function App() {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {apiPrompt && (
+        <PromptModal
+          title="新建接口"
+          label="接口名称"
+          defaultValue="新建接口"
+          onOk={async (name) => {
+            const a = await addApi(apiPrompt, name);
+            if (a) onSelectApi(a.id);
+            setApiPrompt(null);
+          }}
+          onCancel={() => setApiPrompt(null)}
+        />
+      )}
       <Toasts />
     </div>
   );

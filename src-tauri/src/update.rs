@@ -83,7 +83,7 @@ pub async fn check(repo: &str, current: &str) -> UpdateInfo {
         .unwrap_or(false);
     info.has_update = parse_ver(&info.latest) > parse_ver(current);
 
-    // Prefer NSIS setup exe, fall back to msi, then any exe.
+    // Pick the appropriate installer asset for the current platform.
     if let Some(assets) = v.get("assets").and_then(serde_json::Value::as_array) {
         let pick = |pred: &dyn Fn(&str) -> bool| -> Option<String> {
             assets.iter().find_map(|a| {
@@ -97,9 +97,22 @@ pub async fn check(repo: &str, current: &str) -> UpdateInfo {
                 }
             })
         };
-        info.download_url = pick(&|n| n.ends_with(".exe") && n.contains("setup"))
-            .or_else(|| pick(&|n| n.ends_with(".exe")))
-            .or_else(|| pick(&|n| n.ends_with(".msi")));
+        #[cfg(target_os = "windows")]
+        {
+            info.download_url = pick(&|n| n.ends_with(".exe") && n.contains("setup"))
+                .or_else(|| pick(&|n| n.ends_with(".exe")))
+                .or_else(|| pick(&|n| n.ends_with(".msi")));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            info.download_url = pick(&|n| n.ends_with(".dmg"))
+                .or_else(|| pick(&|n| n.ends_with(".pkg")));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            info.download_url = pick(&|n| n.ends_with(".appimage"))
+                .or_else(|| pick(&|n| n.ends_with(".deb")));
+        }
     }
     info
 }

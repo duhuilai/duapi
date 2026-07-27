@@ -110,10 +110,10 @@ export function Sidebar({
     useStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [prompt, setPrompt] = useState<null | { kind: "folder" | "rename"; parentId?: string | null; id?: string; def?: string }>(null);
+  const [prompt, setPrompt] = useState<null | { kind: "folder" | "api" | "rename"; parentId?: string | null; id?: string; def?: string }>(null);
   const [confirm, setConfirm] = useState<null | { id: string; name: string }>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [ctxMenu, setCtxMenu] = useState<null | { x: number; y: number; id: string; name: string }>(null);
+  const [ctxMenu, setCtxMenu] = useState<null | { x: number; y: number; type: "folder" | "api"; id: string; name: string; folderId?: string }>(null);
 
   useEffect(() => {
     if (selectedApiId) {
@@ -160,6 +160,11 @@ export function Sidebar({
           className={"node-row" + (selectedFolderId === f.id && !selectedApiId ? " selected" : "")}
           style={{ paddingLeft: 6 + depth * 14 }}
           onClick={() => onSelectFolder(f.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setCtxMenu({ x: e.clientX, y: e.clientY, type: "folder", id: f.id, name: f.name });
+          }}
         >
           <span className="twist" onClick={(e) => { e.stopPropagation(); toggle(f.id); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.12s", opacity: hasVisibleChildren ? 1 : 0 }}>
@@ -167,24 +172,6 @@ export function Sidebar({
             </svg>
           </span>
           <span className="fname folder-name" onDoubleClick={(e) => { e.stopPropagation(); toggle(f.id); }}>{f.name}</span>
-          <span className="row-acts" onClick={(e) => e.stopPropagation()}>
-            <button className="icon-only" title="新建子分组" onClick={() => setPrompt({ kind: "folder", parentId: f.id })}><IconFolderPlus /></button>
-            <button
-              className="icon-only"
-              title="新建接口"
-              onClick={async () => {
-                const a = await addApi(f.id, "未命名接口");
-                if (a) {
-                  setExpanded((s) => new Set(s).add(f.id));
-                  onSelectApi(a.id);
-                }
-              }}
-            >
-              <IconFilePlus />
-            </button>
-            <button className="icon-only" title="重命名" onClick={() => setPrompt({ kind: "rename", id: f.id, def: f.name })}><IconEdit /></button>
-            <button className="icon-only danger" title="删除分组" onClick={() => setConfirm({ id: f.id, name: f.name })}><IconTrash /></button>
-          </span>
         </div>
         {isOpen && (
           <>
@@ -203,7 +190,7 @@ export function Sidebar({
                   }
                   setRenamingId(null);
                 }}
-                onContextMenu={(x, y) => setCtxMenu({ x, y, id: a.id, name: a.name })}
+                onContextMenu={(x, y) => setCtxMenu({ x, y, type: "api", id: a.id, name: a.name, folderId: f.id })}
                 onUp={() => moveApi(f.id, a.id, -1)}
                 onDown={() => moveApi(f.id, a.id, 1)}
                 onDup={() => dupApi(a.id)}
@@ -246,23 +233,23 @@ export function Sidebar({
         <>
           <div className="ctx-backdrop" onClick={() => setCtxMenu(null)} />
           <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
-            <button
-              onClick={() => {
-                setRenamingId(ctxMenu.id);
-                setCtxMenu(null);
-              }}
-            >
-              重命名
-            </button>
-            <button
-              className="danger"
-              onClick={() => {
-                setConfirm({ id: ctxMenu.id, name: ctxMenu.name });
-                setCtxMenu(null);
-              }}
-            >
-              删除
-            </button>
+            {ctxMenu.type === "folder" && (
+              <>
+                <button onClick={() => { setPrompt({ kind: "folder", parentId: ctxMenu.id }); setCtxMenu(null); }}>新建子分组</button>
+                <button onClick={() => { setPrompt({ kind: "api", parentId: ctxMenu.id }); setCtxMenu(null); }}>新建接口</button>
+                <button onClick={() => { setPrompt({ kind: "rename", id: ctxMenu.id, def: ctxMenu.name }); setCtxMenu(null); }}>重命名</button>
+                <button className="danger" onClick={() => { setConfirm({ id: ctxMenu.id, name: ctxMenu.name }); setCtxMenu(null); }}>删除</button>
+              </>
+            )}
+            {ctxMenu.type === "api" && (
+              <>
+                <button onClick={() => { if (ctxMenu.folderId) moveApi(ctxMenu.folderId, ctxMenu.id, -1); setCtxMenu(null); }}>上移</button>
+                <button onClick={() => { if (ctxMenu.folderId) moveApi(ctxMenu.folderId, ctxMenu.id, 1); setCtxMenu(null); }}>下移</button>
+                <button onClick={() => { dupApi(ctxMenu.id); setCtxMenu(null); }}>复制</button>
+                <button onClick={() => { setRenamingId(ctxMenu.id); setCtxMenu(null); }}>重命名</button>
+                <button className="danger" onClick={() => { setConfirm({ id: ctxMenu.id, name: ctxMenu.name }); setCtxMenu(null); }}>删除</button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -292,6 +279,21 @@ export function Sidebar({
               addFolder(name, prompt.parentId ?? null).then(() => {
                 if (prompt.parentId) setExpanded((s) => new Set(s).add(prompt.parentId!));
               });
+              setPrompt(null);
+            }}
+            onCancel={() => setPrompt(null)}
+          />
+        ) : prompt.kind === "api" ? (
+          <PromptModal
+            title="新建接口"
+            label="接口名称"
+            defaultValue="新建接口"
+            onOk={async (name) => {
+              const a = await addApi(prompt.parentId!, name);
+              if (a) {
+                setExpanded((s) => new Set(s).add(prompt.parentId!));
+                onSelectApi(a.id);
+              }
               setPrompt(null);
             }}
             onCancel={() => setPrompt(null)}
@@ -411,13 +413,6 @@ function ApiNode({
       >
         <span className={methodClass(api.method)}>{api.method}</span>
         <span className="fname">{api.name}</span>
-        <span className="row-acts api-acts" onClick={(e) => e.stopPropagation()}>
-          <button className="icon-only" title="上移" onClick={onUp}><IconArrowUp /></button>
-          <button className="icon-only" title="下移" onClick={onDown}><IconArrowDown /></button>
-          <button className="icon-only" title="复制" onClick={onDup}><IconCopy /></button>
-          <button className="icon-only" title="重命名" onClick={onStartRename}><IconEdit size={13} /></button>
-          <button className="icon-only danger" title="删除" onClick={onDelete}><IconTrash size={13} /></button>
-        </span>
       </div>
     </div>
   );
