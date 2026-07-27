@@ -183,7 +183,8 @@ export function ParamsDocs({
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
-                    if (dragId) reorder(dragId, d.id);
+                    const fromId = e.dataTransfer.getData("text/plain") || dragId;
+                    if (fromId) reorder(fromId, d.id);
                     setDragId(null);
                     setOverId(null);
                   }}
@@ -192,23 +193,21 @@ export function ParamsDocs({
                     setOverId(null);
                   }}
                 >
-                  <td className="pd-grip">
-                    <span
-                      className="grip"
-                      title="拖拽调整顺序"
-                      draggable
-                      onDragStart={(e) => {
-                        setDragId(d.id);
-                        e.dataTransfer.effectAllowed = "move";
-                        e.stopPropagation();
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setOverId(null);
-                      }}
-                    >
-                      ⠿
-                    </span>
+                  <td
+                    className="pd-grip"
+                    title="拖拽调整顺序"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", d.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      setDragId(d.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setOverId(null);
+                    }}
+                  >
+                    <span className="grip">⠿</span>
                   </td>
                   <td>
                     <input
