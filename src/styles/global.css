@@ -328,6 +328,11 @@ input.input:focus, textarea.input:focus, select.input:focus { border-color: var(
 .pd-table input, .pd-table select { width: 100%; border: 1px solid transparent; border-radius: 4px; padding: 6px 7px; font-size: 12px; background: transparent; color: var(--text); outline: none; transition: 0.12s; }
 .pd-table input:focus, .pd-table select:focus { border-color: var(--brand-1); background: #fff; box-shadow: 0 0 0 2px var(--brand-soft); }
 .pd-table tr:hover td { background: var(--brand-soft); }
+.pd-grip { width: 26px; text-align: center; color: var(--muted); cursor: grab; user-select: none; background: #fff; }
+.pd-grip .grip { display: inline-block; font-size: 14px; line-height: 1; }
+.pd-grip .grip:active { cursor: grabbing; }
+.pd-table tr.drag-over td { box-shadow: inset 0 2px 0 0 var(--brand-1); }
+.pd-table tr.dragging { opacity: 0.35; }
 .pd-indent { color: var(--muted); }
 .depth-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); margin-right: 4px; vertical-align: middle; }
 

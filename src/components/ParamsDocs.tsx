@@ -29,6 +29,8 @@ export function ParamsDocs({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const update = (id: string, patch: Partial<ParamDoc>) =>
     onChange(docs.map((d) => (d.id === id ? { ...d, ...patch } : d)));
@@ -41,6 +43,17 @@ export function ParamsDocs({
     if (next < 0 || next >= docs.length) return;
     const arr = [...docs];
     [arr[idx], arr[next]] = [arr[next], arr[idx]];
+    onChange(arr);
+  };
+
+  const reorder = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    const fromIdx = docs.findIndex((d) => d.id === fromId);
+    const toIdx = docs.findIndex((d) => d.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const arr = [...docs];
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
     onChange(arr);
   };
 
@@ -149,17 +162,54 @@ export function ParamsDocs({
           <table className="pd-table">
             <thead>
               <tr>
-                <th style={{ width: showSampleColumn ? "26%" : "30%" }}>参数路径</th>
-                <th style={{ width: "14%" }}>类型</th>
+                <th style={{ width: 28 }}></th>
+                <th style={{ width: showSampleColumn ? "24%" : "28%" }}>参数路径</th>
+                <th style={{ width: "13%" }}>类型</th>
                 <th style={{ width: "8%" }}>必填</th>
-                <th style={{ width: showSampleColumn ? "34%" : "46%" }}>说明</th>
-                {showSampleColumn && <th style={{ width: "14%" }}>示例</th>}
+                <th style={{ width: showSampleColumn ? "31%" : "42%" }}>说明</th>
+                {showSampleColumn && <th style={{ width: "13%" }}>示例</th>}
                 <th style={{ width: 92, whiteSpace: "nowrap" }}></th>
               </tr>
             </thead>
             <tbody>
               {docs.map((d, i) => (
-                <tr key={d.id}>
+                <tr
+                  key={d.id}
+                  className={(dragId === d.id ? "dragging " : "") + (overId === d.id && dragId !== d.id ? "drag-over" : "")}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (overId !== d.id) setOverId(d.id);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragId) reorder(dragId, d.id);
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                >
+                  <td className="pd-grip">
+                    <span
+                      className="grip"
+                      title="拖拽调整顺序"
+                      draggable
+                      onDragStart={(e) => {
+                        setDragId(d.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        e.stopPropagation();
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setOverId(null);
+                      }}
+                    >
+                      ⠿
+                    </span>
+                  </td>
                   <td>
                     <input
                       value={d.path}
