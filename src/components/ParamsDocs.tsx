@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { ParamDoc } from "../types";
 import { newId } from "../types";
@@ -31,6 +31,15 @@ export function ParamsDocs({
   const [error, setError] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  // Ref holds the dragged row id for the whole drag gesture, independent of
+  // React re-renders / dataTransfer quirks, so onDrop can always read it back.
+  const dragIdRef = useRef<string | null>(null);
+
+  const clearDrag = () => {
+    dragIdRef.current = null;
+    setDragId(null);
+    setOverId(null);
+  };
 
   const update = (id: string, patch: Partial<ParamDoc>) =>
     onChange(docs.map((d) => (d.id === id ? { ...d, ...patch } : d)));
@@ -176,6 +185,24 @@ export function ParamsDocs({
                 <tr
                   key={d.id}
                   className={(dragId === d.id ? "dragging " : "") + (overId === d.id && dragId !== d.id ? "drag-over" : "")}
+                  draggable
+                  onDragStart={(e) => {
+                    // Only start a drag when the gesture originates from the grip
+                    // handle; otherwise let the browser handle normal text selection
+                    // inside inputs (cancel the row drag).
+                    const t = e.target as HTMLElement;
+                    if (!t.closest(".pd-grip")) {
+                      e.preventDefault();
+                      return;
+                    }
+                    dragIdRef.current = d.id;
+                    e.dataTransfer.setData("text/plain", d.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragId(d.id);
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                  }}
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
@@ -183,30 +210,15 @@ export function ParamsDocs({
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
-                    const fromId = e.dataTransfer.getData("text/plain") || dragId;
+                    const fromId = dragIdRef.current || e.dataTransfer.getData("text/plain") || dragId;
                     if (fromId) reorder(fromId, d.id);
-                    setDragId(null);
-                    setOverId(null);
+                    clearDrag();
                   }}
                   onDragEnd={() => {
-                    setDragId(null);
-                    setOverId(null);
+                    clearDrag();
                   }}
                 >
-                  <td
-                    className="pd-grip"
-                    title="拖拽调整顺序"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("text/plain", d.id);
-                      e.dataTransfer.effectAllowed = "move";
-                      setDragId(d.id);
-                    }}
-                    onDragEnd={() => {
-                      setDragId(null);
-                      setOverId(null);
-                    }}
-                  >
+                  <td className="pd-grip" title="拖拽调整顺序">
                     <span className="grip">⠿</span>
                   </td>
                   <td>
