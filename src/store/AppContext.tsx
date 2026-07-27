@@ -105,7 +105,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
   const saveApi = async (item: ApiItem) => {
     await api.updateApi(item);
-    notify("接口已保存", "success");
+    notify(
+      item.lastResponse
+        ? "接口已保存（响应结果已一并保存）"
+        : "接口已保存",
+      "success"
+    );
     await refresh();
   };
   const removeApi = async (id: string) => {

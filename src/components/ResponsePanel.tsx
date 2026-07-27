@@ -172,7 +172,7 @@ export function ResponsePanel({
                 rootPath=""
                 onChange={(responseDocs) => onChange({ responseDocs })}
                 notify={notify}
-                showGenerate={false}
+                showGenerate={true}
                 showSampleColumn={false}
               />
             ) : (

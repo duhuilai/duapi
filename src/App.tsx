@@ -54,6 +54,12 @@ export default function App() {
   const [respWidth, setRespWidth] = useState(380);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const splitRef = useRef<HTMLDivElement>(null);
+  // Mirror editingApi so onSend can read the latest value when constructing the
+  // auto-save payload (avoids losing edits made while the request is in flight).
+  const editingApiRef = useRef<ApiItem | null>(null);
+  useEffect(() => {
+    editingApiRef.current = editingApi;
+  }, [editingApi]);
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -84,7 +90,24 @@ export default function App() {
     if (selectedApiId) {
       const a = data.apis.find((x) => x.id === selectedApiId);
       setEditingApi(a ? { ...a } : null);
-      setResponse(null);
+      // Restore the saved response (if any) so the user can see the response is persisted
+      // with the API and can regenerate param docs from it without re-sending.
+      if (a?.lastResponse) {
+        const lr = a.lastResponse;
+        setResponse({
+          status: lr.status,
+          statusText: lr.statusText,
+          headers: lr.headers,
+          body: lr.body,
+          timeMs: lr.timeMs,
+          sizeBytes: lr.sizeBytes,
+          contentType: lr.contentType,
+          ok: lr.status >= 200 && lr.status < 300,
+          error: null,
+        });
+      } else {
+        setResponse(null);
+      }
     } else {
       setEditingApi(null);
     }
@@ -143,7 +166,16 @@ export default function App() {
       contentType: resp.contentType,
       savedAt: new Date().toISOString(),
     };
-    setEditingApi((prev) => (prev ? { ...prev, lastResponse: saved } : prev));
+    // Build the updated API from the latest editingApi (read from ref to avoid losing
+    // concurrent edits made while the request was in flight) and persist immediately
+    // so the response is always saved together with the interface — no extra click.
+    const latest = editingApiRef.current ?? editingApi;
+    const updated: ApiItem = { ...latest, lastResponse: saved };
+    setEditingApi(updated);
+    editingApiRef.current = updated;
+    void saveApi(updated).catch((e) => {
+      notify("自动保存响应失败：" + String(e), "error");
+    });
     setSending(false);
     if (resp.error) notify("请求出错：" + resp.error, "error");
     else notify(`响应 ${resp.status} · ${resp.timeMs} ms`, "success");
