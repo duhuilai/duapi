@@ -459,8 +459,8 @@ input.input:focus, textarea.input:focus, select.input:focus { border-color: var(
 }
 .doclist .item:hover .doc-item-del { display: block; }
 .doclist .item .doc-item-del:hover { color: var(--delete); background: #fef2f2; }
-.doc-editor-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
-.ProseMirror-wrap { flex: 1; overflow: auto; background: var(--panel); }
+.doc-editor-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
+.ProseMirror-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--panel); }
 .editor-toolbar { display: flex; gap: 4px; padding: 10px 14px; background: var(--card); border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
 .editor-toolbar button {
   border: 1px solid var(--border); background: #fff; color: var(--text-soft); min-width: 30px; height: 28px;

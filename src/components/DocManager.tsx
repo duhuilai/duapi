@@ -148,7 +148,7 @@ export function DocManager({
             ))}
       </div>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--panel)" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "var(--panel)" }}>
         {doc ? (
           <>
             <div className="doc-preview-head">
@@ -223,12 +223,12 @@ export function DocManager({
                 </div>
               )}
 
-              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 {editMode ? (
                   <DocEditor content={content} onChange={setContent} />
                 ) : (
                   <>
-                    <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+                    <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "24px 32px" }}>
                       <div
                         className="doc-preview"
                         dangerouslySetInnerHTML={{ __html: content }}
