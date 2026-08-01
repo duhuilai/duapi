@@ -33,7 +33,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install frontend dependencies
-        run: npm install
+        # The committed package-lock.json is generated on the dev machine and
+        # triggers npm bug #4828 (missing platform-specific optional deps such
+        # as @rollup/rollup-<platform>), which breaks `vite build` in CI. Remove
+        # it so each runner regenerates a platform-correct lock before install.
+        run: rm -f package-lock.json && npm install
 
       - name: Build and release (Tauri)
         uses: tauri-apps/tauri-action@v0

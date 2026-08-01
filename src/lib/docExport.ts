@@ -1,6 +1,18 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
-import htmlDocx from "html-docx-js";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  Table,
+  TableRow,
+  TableCell,
+  HeadingLevel,
+  ShadingType,
+  BorderStyle,
+  WidthType,
+} from "docx";
 
 function escapeHtml(s: string): string {
   return s
@@ -47,12 +59,159 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Generate a real .docx (Office Open XML) as a base64 string from the HTML
-// content. This is the format Word opens natively, so no raw HTML leaks.
+// Convert our Tiptap HTML into real .docx (Office Open XML) using the `docx`
+// library. `docx` is pure ESM (no `with`, no Node `fs`), so it bundles cleanly
+// with Vite — unlike html-docx-js which uses `with` and breaks the build.
 export async function exportWord(title: string, content: string): Promise<string> {
-  const html = exportHtml(title, content);
-  const blob = htmlDocx.asBlob(html, { title });
+  const doc = buildDocx(title, content);
+  const blob = await Packer.toBlob(doc);
   return await blobToBase64(blob);
+}
+
+type DocxBlock = Paragraph | Table;
+type DocxInline = TextRun;
+
+// Inline formatting inside a paragraph / table cell.
+function inlineRuns(el: HTMLElement): DocxInline[] {
+  const out: DocxInline[] = [];
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.textContent || "";
+      if (t) out.push(new TextRun(t));
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const e = node as HTMLElement;
+      const tag = e.tagName.toLowerCase();
+      if (tag === "br") {
+        out.push(new TextRun({ text: "", break: 1 }));
+      } else if (tag === "strong" || tag === "b") {
+        out.push(new TextRun({ text: e.textContent || "", bold: true }));
+      } else if (tag === "em" || tag === "i") {
+        out.push(new TextRun({ text: e.textContent || "", italics: true }));
+      } else if (tag === "code") {
+        out.push(new TextRun({ text: e.textContent || "", font: "Consolas" }));
+      } else if (tag === "a") {
+        const href = e.getAttribute("href") || "";
+        const label = e.textContent || "";
+        out.push(new TextRun({ text: href ? `${label} (${href})` : label, color: "0563C1" }));
+      } else if (tag === "span" || tag === "sub" || tag === "sup") {
+        out.push(...inlineRuns(e));
+      } else {
+        out.push(new TextRun(e.textContent || ""));
+      }
+    }
+  });
+  if (out.length === 0) out.push(new TextRun(""));
+  return out;
+}
+
+// Block-level conversion (headings / p / pre / lists / table / hr / div ...).
+function blockElements(el: HTMLElement): DocxBlock[] {
+  const out: DocxBlock[] = [];
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = (node.textContent || "").trim();
+      if (t) out.push(new Paragraph({ children: [new TextRun(t)] }));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const e = node as HTMLElement;
+    const tag = e.tagName.toLowerCase();
+    switch (tag) {
+      case "h1":
+        out.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: inlineRuns(e) }));
+        break;
+      case "h2":
+        out.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: inlineRuns(e) }));
+        break;
+      case "h3":
+        out.push(new Paragraph({ heading: HeadingLevel.HEADING_3, children: inlineRuns(e) }));
+        break;
+      case "p":
+        out.push(new Paragraph({ children: inlineRuns(e), spacing: { after: 120 } }));
+        break;
+      case "pre": {
+        const code = e.querySelector("code");
+        const text = (code ? code.textContent : e.textContent) || "";
+        out.push(
+          new Paragraph({
+            shading: { type: ShadingType.SOLID, color: "auto", fill: "F2F2F2" },
+            children: [new TextRun({ text, font: "Consolas" })],
+            spacing: { before: 80, after: 120 },
+          })
+        );
+        break;
+      }
+      case "ul":
+      case "ol": {
+        const items = Array.from(e.querySelectorAll(":scope > li"));
+        items.forEach((li, i) => {
+          const prefix = tag === "ul" ? "•  " : `${i + 1}.  `;
+          out.push(
+            new Paragraph({
+              children: [new TextRun({ text: prefix }), ...inlineRuns(li as HTMLElement)],
+              spacing: { after: 40 },
+            })
+          );
+        });
+        break;
+      }
+      case "table":
+        out.push(convertTable(e));
+        break;
+      case "hr":
+        out.push(
+          new Paragraph({
+            border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "DDDDDD" } },
+            children: [new TextRun("")],
+            spacing: { before: 80, after: 80 },
+          })
+        );
+        break;
+      case "blockquote":
+        out.push(
+          new Paragraph({ children: inlineRuns(e), indent: { left: 360 }, spacing: { after: 120 } })
+        );
+        break;
+      case "div":
+      case "section":
+      case "figure":
+        out.push(...blockElements(e));
+        break;
+      default:
+        out.push(new Paragraph({ children: inlineRuns(e) }));
+    }
+  });
+  return out;
+}
+
+function convertTable(table: HTMLElement): Table {
+  const rows = Array.from(table.querySelectorAll("tr"));
+  const docxRows = rows.map((tr) => {
+    const cells = Array.from(tr.querySelectorAll("th,td"));
+    const isHeader = !!tr.querySelector("th");
+    return new TableRow({
+      tableHeader: isHeader,
+      children: cells.map(
+        (c) =>
+          new TableCell({
+            children: [new Paragraph({ children: inlineRuns(c as HTMLElement) })],
+          })
+      ),
+    });
+  });
+  return new Table({
+    rows: docxRows,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+  });
+}
+
+function buildDocx(title: string, content: string): Document {
+  const dom = new DOMParser().parseFromString(content, "text/html");
+  const children: DocxBlock[] = [
+    new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(title)] }),
+    ...blockElements(dom.body),
+  ];
+  return new Document({ sections: [{ children }] });
 }
 
 // ---------- HTML -> Markdown ----------
