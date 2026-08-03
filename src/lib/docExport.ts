@@ -1,5 +1,6 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
+import html2pdf from "html2pdf.js";
 import {
   Document,
   Packer,
@@ -366,4 +367,43 @@ export async function exportAsMarkdown(title: string, content: string) {
     "Markdown 文件"
   );
   return ok;
+}
+
+// ---------- HTML -> PDF ----------
+// Render the Tiptap HTML to a real PDF using html2pdf.js (html2canvas + jsPDF).
+// We reuse the standalone HTML/CSS produced by exportHtml, scoped to a wrapper
+// class so the `body` selector still applies inside the offscreen container.
+async function renderPdf(title: string, content: string): Promise<string | null> {
+  const full = exportHtml(title, content);
+  const parsed = new DOMParser().parseFromString(full, "text/html");
+  const styleText = parsed.querySelector("style")?.textContent || "";
+  const pdfCss = styleText.replace(/body\s*\{/, ".pdf-doc {");
+  const container = document.createElement("div");
+  container.style.cssText = "position:fixed;left:-10000px;top:0;width:960px;background:#fff;";
+  container.innerHTML = `<style>${pdfCss}</style><div class="pdf-doc">${content}</div>`;
+  document.body.appendChild(container);
+  try {
+    const opt = {
+      margin: [12, 10, 14, 10] as [number, number, number, number],
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
+      pagebreak: { mode: ["css", "legacy"] as string[] },
+    };
+    const blob = (await html2pdf().set(opt as any).from(container).outputPdf("blob")) as Blob;
+    return await blobToBase64(blob);
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+export async function exportAsPdf(title: string, content: string): Promise<boolean> {
+  let b64: string | null = null;
+  try {
+    b64 = await renderPdf(title, content);
+  } catch (e) {
+    console.error("PDF 渲染失败", e);
+  }
+  if (!b64) return false;
+  return await pickAndWriteBinary(`${title}.pdf`, b64, "pdf", "PDF 文件");
 }

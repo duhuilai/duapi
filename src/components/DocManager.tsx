@@ -3,7 +3,7 @@ import { useStore } from "../store/AppContext";
 import type { DocItem, Folder, ApiItem } from "../types";
 import { DocEditor } from "./DocEditor";
 import { Modal, ConfirmDialog, PromptModal } from "./ui";
-import { exportAsHtml, exportAsWord, exportAsMarkdown } from "../lib/docExport";
+import { exportAsHtml, exportAsWord, exportAsMarkdown, exportAsPdf } from "../lib/docExport";
 
 function IconPlus({ size = 14 }: { size?: number }) {
   return (
@@ -100,11 +100,12 @@ export function DocManager({
     return outline.reduce((sum, a) => sum + a.requestDocs.length + a.responseDocs.length, 0);
   }, [outline]);
 
-  const doExport = async (format: "html" | "word" | "md") => {
+  const doExport = async (format: "html" | "word" | "md" | "pdf") => {
     if (!doc) return;
     let ok = false;
     if (format === "html") ok = await exportAsHtml(title, content);
     else if (format === "word") ok = await exportAsWord(title, content);
+    else if (format === "pdf") ok = await exportAsPdf(title, content);
     else ok = await exportAsMarkdown(title, content);
     if (ok) notify(`已导出 ${format.toUpperCase()}`, "success");
     setExportOpen(false);
@@ -217,6 +218,7 @@ export function DocManager({
                       <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "#fff", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "var(--shadow-md)", zIndex: 20, minWidth: 120 }}>
                         <div className="export-item" onClick={() => doExport("html")}>HTML</div>
                         <div className="export-item" onClick={() => doExport("word")}>Word</div>
+                        <div className="export-item" onClick={() => doExport("pdf")}>PDF</div>
                         <div className="export-item" onClick={() => doExport("md")}>Markdown</div>
                       </div>
                     </>
