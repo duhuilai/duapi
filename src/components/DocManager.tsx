@@ -67,8 +67,11 @@ export function DocManager({
   const [del, setDel] = useState<null | DocItem>(null);
   const [editMode, setEditMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const doc = data.docs.find((d) => d.id === selectedDocId) || null;
+
+  const dirty = !!doc && (content !== doc.content || title !== doc.title);
 
   useEffect(() => {
     if (doc) {
@@ -107,6 +110,16 @@ export function DocManager({
     setExportOpen(false);
   };
 
+  const doSave = async () => {
+    if (!doc || !dirty || saving) return;
+    setSaving(true);
+    try {
+      await saveDoc(doc.id, title, content);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
       <div className="doclist">
@@ -127,7 +140,7 @@ export function DocManager({
               <div
                 key={d.id}
                 className={"item" + (selectedDocId === d.id ? " selected" : "")}
-                onClick={() => onSelectDoc(d.id)}
+                onClick={async () => { if (dirty) await doSave(); onSelectDoc(d.id); }}
               >
                 <div className="t">{d.title}</div>
                 <div className="s">
@@ -159,16 +172,31 @@ export function DocManager({
                   <span>文档预览</span>
                   <span className="badge">已生成</span>
                   <div style={{ flex: 1 }} />
-                  <button className="x-btn" title="关闭文档" onClick={() => onCloseDoc?.()}>×</button>
+                  <button className="x-btn" title="关闭文档" onClick={async () => { if (dirty) await doSave(); onCloseDoc?.(); }}>×</button>
                 </div>
                 <div className="meta">
                   基于 {doc.apiIds.length} 个接口自动生成 · 生成时间 {new Date(doc.createdAt).toLocaleString()} · v{data.version}
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 16 }}>
+                {editMode && dirty && (
+                  <span style={{ fontSize: 12, color: "#E08600", fontWeight: 600, whiteSpace: "nowrap" }} title="有未保存的修改">● 未保存</span>
+                )}
+                {editMode && (
+                  <button
+                    className="btn sm primary"
+                    disabled={!dirty || saving}
+                    onClick={doSave}
+                  >
+                    {saving ? "保存中…" : "保存"}
+                  </button>
+                )}
                 <button
                   className={"btn sm" + (editMode ? " primary" : "")}
-                  onClick={() => setEditMode((v) => !v)}
+                  onClick={async () => {
+                    if (editMode && dirty) await doSave();
+                    setEditMode((v) => !v);
+                  }}
                 >
                   <IconEdit size={13} /> {editMode ? "预览模式" : "编辑模式"}
                 </button>
@@ -235,7 +263,7 @@ export function DocManager({
                       />
                     </div>
                     <div className="doc-status-bar">
-                      <span>文档编辑于 {new Date(doc.updatedAt).toLocaleString()} · 自动保存</span>
+                      <span>已保存 · 编辑于 {new Date(doc.updatedAt).toLocaleString()}</span>
                       <span>字数 {content.replace(/<[^>]+>/g, "").length} · 阅读时间 ≈ {Math.max(1, Math.ceil(content.replace(/<[^>]+>/g, "").length / 300))} 分钟</span>
                     </div>
                   </>

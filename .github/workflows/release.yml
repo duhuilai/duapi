@@ -37,6 +37,9 @@ jobs:
         # triggers npm bug #4828 (missing platform-specific optional deps such
         # as @rollup/rollup-<platform>), which breaks `vite build` in CI. Remove
         # it so each runner regenerates a platform-correct lock before install.
+        # NOTE: use bash explicitly — on Windows the default shell is PowerShell
+        # where `rm -f` is invalid and the step would fail.
+        shell: bash
         run: rm -f package-lock.json && npm install
 
       - name: Build and release (Tauri)
