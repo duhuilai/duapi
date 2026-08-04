@@ -1,6 +1,5 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
-import html2pdf from "html2pdf.js";
 import {
   Document,
   Packer,
@@ -370,60 +369,33 @@ export async function exportAsMarkdown(title: string, content: string) {
 }
 
 // ---------- HTML -> PDF ----------
-// Render the Tiptap HTML to a real PDF using html2pdf.js (html2canvas + jsPDF).
-// We reuse the standalone HTML/CSS produced by exportHtml, scoped to a wrapper
-// class so the `body` selector still applies inside the offscreen container.
-async function renderPdf(title: string, content: string): Promise<string | null> {
-  if (!content || !content.trim()) return null;
-  const full = exportHtml(title, content);
-  const parsed = new DOMParser().parseFromString(full, "text/html");
-  const styleText = parsed.querySelector("style")?.textContent || "";
-  const pdfCss = styleText.replace(/body\s*\{/, ".pdf-doc {");
-  const container = document.createElement("div");
-  // 关键：离屏元素（负 left）会让 html2canvas 用 getBoundingClientRect 算出的
-  // 负偏移把内容推到画布外，得到空白 PDF。必须把容器放在视口内（左上角、
-  // z-index:-1 藏到页面背后），html2canvas 才能截到完整内容。
-  container.style.cssText =
-    "position:absolute; left:0; top:0; z-index:-1; width:960px; background:#fff;";
-  container.innerHTML = `<style>${pdfCss}</style><div class="pdf-doc">${content}</div>`;
-  document.body.appendChild(container);
-  try {
-    // 等两帧确保布局/样式计算完成，避免截取空白画布
-    await new Promise<void>((r) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => r()))
-    );
-    const opt = {
-      margin: [12, 10, 14, 10] as [number, number, number, number],
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        width: 960,
-        windowWidth: 960,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
-      pagebreak: { mode: ["css", "legacy"] as string[] },
-    };
-    const blob = (await html2pdf()
-      .set(opt as any)
-      .from(container)
-      .outputPdf("blob")) as Blob;
-    if (!blob || blob.size === 0) return null;
-    return await blobToBase64(blob);
-  } finally {
-    document.body.removeChild(container);
-  }
-}
-
+// 用浏览器原生 window.print()（WebView2/WKWebView 基于 Chromium/WebKit，原生
+// 支持中文）把文档渲染成 PDF。html2canvas 方案在 Tauri WebView 中反复渲染出
+// 空白画布（已知兼容性坑，与元素位置无关），故改用系统打印对话框"另存为 PDF"，
+// 100% 保真、原生支持中文，无需嵌入字体或额外 canvas 渲染。
 export async function exportAsPdf(title: string, content: string): Promise<boolean> {
-  let b64: string | null = null;
+  if (!content || !content.trim()) return false;
   try {
-    b64 = await renderPdf(title, content);
+    const html = exportHtml(title, content);
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute(
+      "style",
+      "position:fixed; right:0; bottom:0; width:0; height:0; border:0; visibility:hidden;"
+    );
+    document.body.appendChild(iframe);
+    const idoc = iframe.contentWindow!.document;
+    idoc.open();
+    idoc.write(html);
+    idoc.close();
+    await new Promise<void>((r) => setTimeout(r, 400));
+    iframe.contentWindow!.focus();
+    iframe.contentWindow!.print();
+    window.setTimeout(() => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    }, 2000);
+    return true;
   } catch (e) {
-    console.error("PDF 渲染失败", e);
+    console.error("PDF 打印失败", e);
+    return false;
   }
-  if (!b64) return false;
-  return await pickAndWriteBinary(`${title}.pdf`, b64, "pdf", "PDF 文件");
 }
