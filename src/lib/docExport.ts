@@ -1,4 +1,6 @@
 import { save } from "@tauri-apps/plugin-dialog";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { api } from "./api";
 import {
   Document,
@@ -369,21 +371,94 @@ export async function exportAsMarkdown(title: string, content: string) {
 }
 
 // ---------- HTML -> PDF ----------
-// 用浏览器原生 window.print()（WebView2/WKWebView 基于 Chromium/WebKit，原生
-// 支持中文）把文档渲染成 PDF。html2canvas 方案在 Tauri WebView 中反复渲染出
-// 空白画布（已知兼容性坑，与元素位置无关），故改用系统打印对话框"另存为 PDF"，
-// 100% 保真、原生支持中文，无需嵌入字体或额外 canvas 渲染。
+// 直接在前端把文档渲染成真实 PDF 文件，并像 HTML 导出一样先弹“保存”对话框选
+// 路径再写盘（不再依赖系统打印对话框，避免打印框一闪而过、体验差的问题）。
+// 做法：用 html2canvas 把离屏但真实参与布局的文档容器栅格化为高清位图，再用
+// jsPDF 按 A4 分页写入。中文随系统 / WebView 字体一并栅格化，无需嵌入字体，
+// 跨平台 100% 保真。
+const RENDER_CSS = `
+.pdf-render { font-family:'Segoe UI','Microsoft YaHei',Arial,sans-serif; color:#1e293b; padding:20px 28px; box-sizing:border-box; line-height:1.6; font-size:14px; background:#fff; }
+.pdf-render h1 { color:#1E40AF; border-bottom:2px solid #DBEAFE; padding-bottom:8px; font-size:26px; margin-top:0; }
+.pdf-render h2 { color:#1E40AF; margin-top:28px; font-size:20px; }
+.pdf-render h3 { color:#334155; margin-top:22px; font-size:16px; }
+.pdf-render p { margin:0 0 12px; }
+.pdf-render table { border-collapse:collapse; width:100%; margin:12px 0; }
+.pdf-render th, .pdf-render td { border:1px solid #cbd5e1; padding:6px 10px; text-align:left; vertical-align:top; font-size:13px; }
+.pdf-render th { background:#eff6ff; font-weight:700; }
+.pdf-render code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-family:Consolas,'Courier New',monospace; font-size:13px; }
+.pdf-render pre { background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; overflow:auto; }
+.pdf-render pre code { background:transparent; padding:0; }
+.pdf-render hr { border:none; border-top:1px solid #e2e8f0; margin:20px 0; }
+.pdf-render blockquote { margin:12px 0; padding-left:12px; border-left:3px solid #cbd5e1; color:#475569; }
+.pdf-render img { max-width:100%; }
+`;
+
+function ensurePdfStyle(): void {
+  if (document.getElementById("pdf-render-style")) return;
+  const el = document.createElement("style");
+  el.id = "pdf-render-style";
+  el.textContent = RENDER_CSS;
+  document.head.appendChild(el);
+}
+
+// 把文档 HTML 栅格化为 A4 多页 PDF，返回 base64 字节串（供 writeBinaryFile 写盘）。
+async function htmlToPdfBytes(title: string, content: string): Promise<string> {
+  ensurePdfStyle();
+  const container = document.createElement("div");
+  container.className = "pdf-render";
+  container.innerHTML = `<h1>${escapeHtml(title)}</h1>${content}`;
+  // 离屏但真实参与布局：position:fixed + 负偏移，确保 html2canvas 能正常绘制。
+  container.style.position = "fixed";
+  container.style.left = "-10000px";
+  container.style.top = "0";
+  container.style.width = "794px";
+  container.style.background = "#ffffff";
+  container.style.zIndex = "-1";
+  document.body.appendChild(container);
+  try {
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      logging: false,
+    });
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF("p", "mm", "a4");
+    pdf.setProperties({ title, author: "duApi" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    let heightLeft = imgHeight;
+    let position = 0;
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+    while (heightLeft > 0) {
+      position -= pageHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+    const dataUri = pdf.output("datauristring");
+    return dataUri.slice(dataUri.indexOf(",") + 1);
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
 export async function exportAsPdf(title: string, content: string): Promise<boolean> {
   if (!content || !content.trim()) return false;
   try {
-    // 走 Rust 端原生打印：macOS 上 Tauri 的 WKWebView 不会把前端 window.print()
-    // 路由到系统打印框，必须由 WebviewWindow::print() 触发；Rust 端会创建独立
-    // 打印窗口注入文档，并弹系统打印对话框（选“储存为 PDF / 另存为 PDF”保存）。
-    const html = exportHtml(title, content);
-    await api.printDocument(html);
+    const path = await save({
+      defaultPath: `${title}.pdf`,
+      filters: [{ name: "PDF 文件", extensions: ["pdf"] }],
+    });
+    if (!path) return false;
+    const b64 = await htmlToPdfBytes(title, content);
+    await api.writeBinaryFile(path, b64);
     return true;
   } catch (e) {
-    console.error("PDF 打印失败", e);
+    console.error("PDF 导出失败", e);
     return false;
   }
 }

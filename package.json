@@ -1,7 +1,7 @@
 {
   "name": "duapi",
   "private": true,
-  "version": "0.1.15",
+  "version": "0.1.16",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -25,7 +25,8 @@
     "@tiptap/react": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",
     "docx": "^9.7.1",
-    "html2pdf.js": "^0.14.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

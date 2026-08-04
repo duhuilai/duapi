@@ -111,9 +111,7 @@ export function DocManager({
       else if (format === "pdf") ok = await exportAsPdf(title, content);
       else ok = await exportAsMarkdown(title, content);
       if (ok) {
-        if (format === "pdf")
-          notify("已调起打印，请在对话框中选择“Microsoft Print to PDF / 另存为 PDF”保存", "success");
-        else notify(`已导出 ${format.toUpperCase()}`, "success");
+        notify(`已导出 ${format.toUpperCase()}`, "success");
       } else if (format === "pdf") notify("PDF 导出失败，请重试", "error");
     } catch (e) {
       console.error("导出失败", e);
