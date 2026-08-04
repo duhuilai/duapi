@@ -477,6 +477,55 @@ fn read_text_file(path: String) -> Result<String> {
 }
 
 // ---------------------------------------------------------------------------
+// PDF 打印（原生 WebView print）
+// macOS 上 Tauri 的 WKWebView 不会把前端 window.print() 路由到系统打印框，
+// 必须由 Rust 端 WebviewWindow::print() 触发。为跨平台一致，这里统一创建
+// 一个独立隐藏打印窗口，注入文档 HTML，等渲染完成后触发打印：
+//   - macOS -> WebviewWindow::print()（弹系统打印对话框，选“储存为 PDF”）
+//   - 其他平台 -> 窗口内 window.print()（WebView2 弹系统打印对话框）
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn print_document(html: String, app: tauri::AppHandle) -> Result<()> {
+    let label = "doc-print";
+    // 若已存在同名窗口先销毁，避免重复
+    if let Some(old) = app.get_webview_window(label) {
+        let _ = old.destroy();
+    }
+    // 序列化成 JSON 字符串字面量，安全注入 JS（自动转义引号/特殊字符）
+    let html_json = serde_json::to_string(&html).map_err(|e| e.to_string())?;
+    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App("print.html".into()))
+        .title("文档打印")
+        .visible(false)
+        .inner_size(820.0, 1100.0)
+        // on_page_load 是 builder 的方法，在 build() 之前链式配置
+        .on_page_load(move |window, _payload| {
+            let _ = window.eval(&format!(
+                "document.open();document.write({});document.close();",
+                html_json
+            ));
+            let w2 = window.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = w2.print();
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = w2.eval("window.print()");
+                }
+                // 打印对话框关闭后再销毁窗口
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                let _ = w2.destroy();
+            });
+        })
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Update flow
 // ---------------------------------------------------------------------------
 
@@ -537,6 +586,7 @@ pub fn run() {
             write_text_file,
             write_binary_file,
             read_text_file,
+            print_document,
             check_update_cmd,
             download_update_cmd,
             install_update_cmd

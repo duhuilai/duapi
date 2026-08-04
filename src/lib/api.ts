@@ -58,6 +58,8 @@ export const api = {
     invoke<void>("write_binary_file", { path, content }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
 
+  printDocument: (html: string) => invoke<void>("print_document", { html }),
+
   getVersion: () => invoke<string>("get_version"),
   checkUpdate: (repo: string) => invoke<UpdateInfo>("check_update_cmd", { repo }),
   downloadUpdate: (url: string, target: string) =>

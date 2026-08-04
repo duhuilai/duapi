@@ -376,23 +376,11 @@ export async function exportAsMarkdown(title: string, content: string) {
 export async function exportAsPdf(title: string, content: string): Promise<boolean> {
   if (!content || !content.trim()) return false;
   try {
+    // 走 Rust 端原生打印：macOS 上 Tauri 的 WKWebView 不会把前端 window.print()
+    // 路由到系统打印框，必须由 WebviewWindow::print() 触发；Rust 端会创建独立
+    // 打印窗口注入文档，并弹系统打印对话框（选“储存为 PDF / 另存为 PDF”保存）。
     const html = exportHtml(title, content);
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute(
-      "style",
-      "position:fixed; right:0; bottom:0; width:0; height:0; border:0; visibility:hidden;"
-    );
-    document.body.appendChild(iframe);
-    const idoc = iframe.contentWindow!.document;
-    idoc.open();
-    idoc.write(html);
-    idoc.close();
-    await new Promise<void>((r) => setTimeout(r, 400));
-    iframe.contentWindow!.focus();
-    iframe.contentWindow!.print();
-    window.setTimeout(() => {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    }, 2000);
+    await api.printDocument(html);
     return true;
   } catch (e) {
     console.error("PDF 打印失败", e);
