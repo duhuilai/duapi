@@ -68,6 +68,7 @@ export function DocManager({
   const [editMode, setEditMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const doc = data.docs.find((d) => d.id === selectedDocId) || null;
 
@@ -101,14 +102,23 @@ export function DocManager({
   }, [outline]);
 
   const doExport = async (format: "html" | "word" | "md" | "pdf") => {
-    if (!doc) return;
-    let ok = false;
-    if (format === "html") ok = await exportAsHtml(title, content);
-    else if (format === "word") ok = await exportAsWord(title, content);
-    else if (format === "pdf") ok = await exportAsPdf(title, content);
-    else ok = await exportAsMarkdown(title, content);
-    if (ok) notify(`已导出 ${format.toUpperCase()}`, "success");
-    setExportOpen(false);
+    if (!doc || exporting) return;
+    setExporting(true);
+    try {
+      let ok = false;
+      if (format === "html") ok = await exportAsHtml(title, content);
+      else if (format === "word") ok = await exportAsWord(title, content);
+      else if (format === "pdf") ok = await exportAsPdf(title, content);
+      else ok = await exportAsMarkdown(title, content);
+      if (ok) notify(`已导出 ${format.toUpperCase()}`, "success");
+      else if (format === "pdf") notify("PDF 导出失败（内容为空或渲染异常）", "error");
+    } catch (e) {
+      console.error("导出失败", e);
+      notify("导出失败，请重试", "error");
+    } finally {
+      setExporting(false);
+      setExportOpen(false);
+    }
   };
 
   const doSave = async () => {
@@ -209,9 +219,9 @@ export function DocManager({
                   <IconTrash size={13} /> 删除
                 </button>
                 <div style={{ position: "relative" }}>
-                  <button className="btn primary sm" onClick={() => setExportOpen((v) => !v)}>
-                    导出 <IconChevronDown size={12} />
-                  </button>
+                <button className="btn primary sm" onClick={() => setExportOpen((v) => !v)} disabled={exporting}>
+                  {exporting ? "正在导出…" : <>导出 <IconChevronDown size={12} /></>}
+                </button>
                   {exportOpen && (
                     <>
                       <div style={{ position: "fixed", inset: 0 }} onClick={() => setExportOpen(false)} />
