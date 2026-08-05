@@ -101,7 +101,7 @@ function inlineRuns(el: HTMLElement): DocxInline[] {
           text: e.textContent || "",
           font: "Microsoft YaHei",
           size: 20, // 10pt (half-points in docx)
-          shading: { type: ShadingType.SOLID, color: "none", fill: "F1F5F9" },
+          shading: { type: ShadingType.SOLID, color: "auto", fill: "F1F5F9" },
         }));
       } else if (tag === "a") {
         const href = e.getAttribute("href") || "";
@@ -148,7 +148,7 @@ function blockElements(el: HTMLElement): DocxBlock[] {
         const text = (code ? code.textContent : e.textContent) || "";
         out.push(
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: "none", fill: "F8FAFC" },
+            shading: { type: ShadingType.SOLID, color: "auto", fill: "F8FAFC" },
             border: {
               top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
               bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
