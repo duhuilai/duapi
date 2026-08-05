@@ -1,11 +1,11 @@
 {
   "name": "duapi",
   "private": true,
-  "version": "0.1.17",
+  "version": "0.1.18",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/embed-fonts.mjs && vite",
+    "build": "node scripts/embed-fonts.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },

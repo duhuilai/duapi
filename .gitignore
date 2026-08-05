@@ -12,3 +12,6 @@ vite.config.ts.timestamp-*.mjs
 
 # WorkBuddy internal project data
 .workbuddy/
+
+# Generated base64 font injection for PDF export (build-time only)
+src/lib/_fontBytes.generated.ts

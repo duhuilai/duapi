@@ -375,17 +375,32 @@ export async function exportAsMarkdown(title: string, content: string) {
 // HTML/Word 导出一致：先弹“保存”对话框选路径再写盘。中文通过嵌入微软雅黑
 // 字体（Regular + Bold）渲染；启用 subset 子集化，仅嵌入用到的字形，PDF 体积
 // 不会因字体变大。逐字符换行天然支持中文（无空格也能正确断行）。
-const PDF_FONT_URL = "/fonts/msyh.ttf";
-const PDF_BOLD_URL = "/fonts/msyhbd.ttf";
+//
+// 字体以 base64 形式在构建期由 scripts/embed-fonts.mjs 注入
+// src/lib/_fontBytes.generated.ts，运行期直接解码使用，不再依赖 fetch 加载
+// 字体文件——避免 Tauri 生产构建中“/fonts/...”路径解析到错误/陈旧资源，从而
+// 产生文字散乱、间距巨大等乱码 PDF。该模块在首次导出 PDF 时按需动态加载，
+// 不影响应用启动速度。
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
 
-let fontBytesCache: Promise<Uint8Array> | null = null;
-let boldBytesCache: Promise<Uint8Array> | null = null;
-function loadFontBytes(url: string, store: "font" | "bold"): Promise<Uint8Array> {
-  if (store === "font" && !fontBytesCache)
-    fontBytesCache = fetch(url).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b));
-  if (store === "bold" && !boldBytesCache)
-    boldBytesCache = fetch(url).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b));
-  return store === "font" ? (fontBytesCache as Promise<Uint8Array>) : (boldBytesCache as Promise<Uint8Array>);
+async function loadFontBytes(): Promise<[Uint8Array, Uint8Array]> {
+  try {
+    const mod = await import("./_fontBytes.generated");
+    return [b64ToBytes(mod.MSYH_TTF_B64), b64ToBytes(mod.MSYHBD_TTF_B64)];
+  } catch {
+    // 兜底：构建未生成注入模块时（如直接跑 vite），退回 fetch 本地字体
+    const [a, b] = await Promise.all([
+      fetch("/fonts/msyh.ttf").then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x)),
+      fetch("/fonts/msyhbd.ttf").then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x)),
+    ]);
+    return [a, b];
+  }
 }
 
 type Style = { bold?: boolean; code?: boolean; link?: boolean; italic?: boolean };
@@ -903,10 +918,7 @@ function renderNode(w: PdfWriter, el: HTMLElement) {
 async function htmlToPdfBytes(title: string, content: string): Promise<string> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
-  const [fb, bb] = await Promise.all([
-    loadFontBytes(PDF_FONT_URL, "font"),
-    loadFontBytes(PDF_BOLD_URL, "bold"),
-  ]);
+  const [fb, bb] = await loadFontBytes();
   const font = await pdf.embedFont(fb, { subset: true });
   const boldFont = await pdf.embedFont(bb, { subset: true });
   const w = new PdfWriter(pdf, font, boldFont);
