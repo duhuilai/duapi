@@ -1,6 +1,6 @@
 import { save } from "@tauri-apps/plugin-dialog";
-import { PDFDocument, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { api } from "./api";
 // 字体字节在构建期由 scripts/embed-fonts.mjs 注入（base64 字符串）。
 // 此处**静态**引入，确保运行期必定拿到确切字节，不依赖动态 import 的
@@ -153,7 +153,7 @@ function blockElements(el: HTMLElement): DocxBlock[] {
       case "ol": {
         const items = Array.from(e.querySelectorAll(":scope > li"));
         items.forEach((li, i) => {
-          const prefix = tag === "ul" ? "•  " : `${i + 1}.  `;
+          const prefix = tag === "ul" ? "\u2022  " : `${i + 1}.  `;
           out.push(
             new Paragraph({
               children: [new TextRun({ text: prefix }), ...inlineRuns(li as HTMLElement)],
@@ -376,454 +376,49 @@ export async function exportAsMarkdown(title: string, content: string) {
   return ok;
 }
 
-// ---------- HTML -> PDF（矢量文本，文字可选中/复制） ----------
-// 用 pdf-lib 把文档 HTML 逐文本块绘制成真实 PDF（文字可选中、可复制），与
-// HTML/Word 导出一致：先弹“保存”对话框选路径再写盘。中文通过嵌入微软雅黑
-// 字体（Regular + Bold）渲染；启用 subset 子集化，仅嵌入用到的字形，PDF 体积
-// 不会因字体变大。逐字符换行天然支持中文（无空格也能正确断行）。
-//
-// 字体以 base64 形式在构建期由 scripts/embed-fonts.mjs 注入
-// src/lib/_fontBytes.generated.ts，运行期**静态引入并直接解码**使用，不再
-// 依赖 fetch 加载字体文件，也不依赖动态 import 的代码分割 chunk（Tauri 生产
-// WebView 加载该 21MB chunk 可能失败而回退到错误字体，产生文字散乱、间距巨大
-// 等乱码 PDF）。代价是主包增大约 21MB，桌面应用可接受，且彻底消除字体加载的
-// 环境不确定性。
-function b64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
+// ==========================================================================
+//  PDF 导出 — jsPDF + autoTable 方案（v0.1.21）
+//  用浏览器级表格引擎替换手写 PdfWriter 布局，彻底解决表格错位问题。
+// ==========================================================================
 
-async function loadFontBytes(): Promise<[Uint8Array, Uint8Array]> {
-  // 静态引入已保证字节存在；此处仅做 base64 解码。若构建未注入字体字节，
-  // 直接抛错（而非静默回退到 fetch 错误字体），让问题暴露而不是产出乱码 PDF。
-  if (!MSYH_TTF_B64 || !MSYHBD_TTF_B64) {
-    throw new Error("字体字节未注入：请确认 scripts/embed-fonts.mjs 已在构建前运行");
+const PAGE_W = 210; // A4 width in mm
+const PAGE_H = 297; // A4 height in mm
+const MARGIN_L = 20;
+const MARGIN_R = 20;
+const MARGIN_T = 25;
+const MARGIN_B = 25;
+const CONTENT_W = PAGE_W - MARGIN_L - MARGIN_R;
+
+/** Current cursor Y position (from top of page). */
+let pdfY = MARGIN_T;
+/** The jsPDF instance being built. */
+let pdfInst: jsPDF | null = null;
+
+/**
+ * Ensure there's at least `need` mm of space left on the current page.
+ * If not, add a new page and reset cursor.
+ */
+function ensureSpace(need: number) {
+  if (!pdfInst) return;
+  if (pdfY + need > PAGE_H - MARGIN_B) {
+    pdfInst.addPage();
+    pdfY = MARGIN_T;
   }
-  return [b64ToBytes(MSYH_TTF_B64), b64ToBytes(MSYHBD_TTF_B64)];
 }
 
+/** Rich-text segment extracted from HTML inline elements. */
 type Style = { bold?: boolean; code?: boolean; link?: boolean; italic?: boolean };
 type Segment = { text: string; style: Style };
-type Run = { ch: string; style: Style };
-type RichOpts = {
-  size?: number;
-  leading?: number;
-  indent?: number;
-  color?: any;
-  gapBefore?: number;
-  gapAfter?: number;
-};
 
-class PdfWriter {
-  pdf: any;
-  font: any;
-  boldFont: any;
-  page: any;
-  y = 0;
-  readonly marginX = 56;
-  readonly marginY = 54;
-  readonly pageW = 595.28; // A4 @72dpi
-  readonly pageH = 841.89;
-  contentW = 0;
-
-  constructor(pdf: any, font: any, boldFont: any) {
-    this.pdf = pdf;
-    this.font = font;
-    this.boldFont = boldFont;
-    this.contentW = this.pageW - this.marginX * 2;
-    this.page = pdf.addPage([this.pageW, this.pageH]);
-    this.y = this.pageH - this.marginY;
-  }
-
-  newPage() {
-    this.page = this.pdf.addPage([this.pageW, this.pageH]);
-    this.y = this.pageH - this.marginY;
-  }
-
-  ensure(space: number) {
-    if (this.y - space < this.marginY) this.newPage();
-  }
-
-  charW(ch: string, style: Style, size: number): number {
-    const f = style.bold ? this.boldFont : this.font;
-    return f.widthOfTextAtSize(ch, size);
-  }
-
-  colorFor(style: Style, base: any): any {
-    if (style.code) return rgb(0.78, 0.2, 0.2);
-    if (style.link) return rgb(0.02, 0.38, 0.76);
-    return base;
-  }
-
-  // 富文本块：逐字符换行 + 内联样式（粗体/代码/链接），文字可选中复制
-  rich(segs: Segment[], opts: RichOpts) {
-    const size = opts.size ?? 12;
-    const leading = opts.leading ?? size * 1.6;
-    const indent = opts.indent ?? 0;
-    const color = opts.color ?? rgb(0.12, 0.16, 0.23);
-    if (opts.gapBefore) this.y -= opts.gapBefore;
-    const flat: Run[] = [];
-    for (const s of segs) for (const ch of s.text) flat.push({ ch, style: s.style });
-    const maxW = this.contentW - indent;
-    let line: Run[] = [];
-    let curW = 0;
-    const flush = () => {
-      if (line.length === 0) return;
-      const baseY = this.y - size;
-      let runText = "";
-      let runStyle: Style = line[0].style;
-      let runX = this.marginX + indent;
-      const emit = () => {
-        if (!runText) return;
-        const f = runStyle.bold ? this.boldFont : this.font;
-        this.page.drawText(runText, {
-          x: runX,
-          y: baseY,
-          size,
-          font: f,
-          color: this.colorFor(runStyle, color),
-        });
-        runX += f.widthOfTextAtSize(runText, size);
-        runText = "";
-      };
-      for (const item of line) {
-        if (item.style !== runStyle) emit();
-        runStyle = item.style;
-        runText += item.ch;
-      }
-      emit();
-      this.y -= leading;
-      line = [];
-      curW = 0;
-    };
-    for (const item of flat) {
-      if (item.ch === "\n") {
-        flush();
-        continue;
-      }
-      const w = this.charW(item.ch, item.style, size);
-      if (line.length > 0 && curW + w > maxW) flush();
-      line.push(item);
-      curW += w;
-    }
-    flush();
-    if (opts.gapAfter) this.y -= opts.gapAfter;
-  }
-
-  text(t: string, opts: RichOpts) {
-    this.rich([{ text: t, style: {} }], opts);
-  }
-
-  heading(t: string, size: number, color: any, withBorder: boolean, gapBefore: number, gapAfter: number) {
-    this.y -= gapBefore;
-    this.ensure(size * 1.6);
-    const baseY = this.y - size;
-    this.page.drawText(t, { x: this.marginX, y: baseY, size, font: this.boldFont, color });
-    this.y -= size * 1.4;
-    if (withBorder) {
-      const yLine = this.y + size * 0.35;
-      this.page.drawLine({
-        start: { x: this.marginX, y: yLine },
-        end: { x: this.pageW - this.marginX, y: yLine },
-        thickness: 1,
-        color: rgb(0.86, 0.92, 0.98),
-      });
-      this.y -= 4;
-    }
-    this.y -= gapAfter;
-  }
-
-  hr() {
-    this.y -= 8;
-    this.ensure(8);
-    const yLine = this.y;
-    this.page.drawLine({
-      start: { x: this.marginX, y: yLine },
-      end: { x: this.pageW - this.marginX, y: yLine },
-      thickness: 0.8,
-      color: rgb(0.89, 0.91, 0.94),
-    });
-    this.y -= 12;
-  }
-
-  // 代码块（浅灰底 + 逐行文本）
-  codeBlock(code: string) {
-    const size = 10.5;
-    const leading = size * 1.5;
-    const padX = 10;
-    const padY = 8;
-    const maxW = this.contentW - padX * 2;
-    const lines = this.wrapPlain(code, this.font, size, maxW);
-    const blockH = lines.length * leading + padY * 2;
-    this.y -= 6;
-    this.ensure(blockH);
-    const top = this.y;
-    this.page.drawRectangle({
-      x: this.marginX,
-      y: top - blockH,
-      width: this.contentW,
-      height: blockH,
-      color: rgb(0.97, 0.98, 0.99),
-      borderColor: rgb(0.89, 0.91, 0.94),
-      borderWidth: 0.5,
-    });
-    let yy = top - padY;
-    for (const ln of lines) {
-      this.page.drawText(ln, {
-        x: this.marginX + padX,
-        y: yy - size,
-        size,
-        font: this.font,
-        color: rgb(0.15, 0.2, 0.3),
-      });
-      yy -= leading;
-    }
-    this.y = top - blockH - 6;
-  }
-
-  wrapPlain(text: string, font: any, size: number, maxW: number): string[] {
-    const out: string[] = [];
-    let line = "";
-    for (const ch of text) {
-      if (ch === "\n") {
-        out.push(line);
-        line = "";
-        continue;
-      }
-      const cand = line + ch;
-      if (font.widthOfTextAtSize(cand, size) > maxW && line) {
-        out.push(line);
-        line = ch;
-      } else {
-        line = cand;
-      }
-    }
-    out.push(line);
-    return out;
-  }
-
-  blockquote(segs: Segment[]) {
-    const indent = 14;
-    const size = 12;
-    const leading = size * 1.6;
-    const flat: Run[] = [];
-    for (const s of segs) for (const ch of s.text) flat.push({ ch, style: s.style });
-    const maxW = this.contentW - indent - 6;
-    let lines = 1;
-    let curW = 0;
-    for (const item of flat) {
-      const w = this.charW(item.ch, item.style, size);
-      if (curW + w > maxW && curW > 0) {
-        lines++;
-        curW = 0;
-      }
-      curW += w;
-    }
-    const blockH = lines * leading;
-    this.y -= 6;
-    this.ensure(blockH);
-    const top = this.y;
-    this.page.drawRectangle({
-      x: this.marginX + 2,
-      y: top - blockH,
-      width: 3,
-      height: blockH,
-      color: rgb(0.8, 0.83, 0.88),
-    });
-    this.rich(segs, { size, leading, indent, color: rgb(0.28, 0.34, 0.42), gapAfter: 6 });
-  }
-
-  list(items: Segment[][], ordered: boolean) {
-    this.y -= 4;
-    items.forEach((segs, i) => {
-      const marker = ordered ? `${i + 1}. ` : "• ";
-      const size = 12;
-      const leading = size * 1.6;
-      const indent = 16;
-      const flat: Run[] = [];
-      for (const s of segs) for (const ch of s.text) flat.push({ ch, style: s.style });
-      const markerW = this.font.widthOfTextAtSize(marker, size);
-      const maxW = this.contentW - indent;
-      let lines = 1;
-      let curW = markerW;
-      for (const item of flat) {
-        const w = this.charW(item.ch, item.style, size);
-        if (curW + w > maxW && curW > markerW) {
-          lines++;
-          curW = markerW;
-        }
-        curW += w;
-      }
-      const blockH = lines * leading;
-      this.ensure(blockH);
-      const baseY = this.y - size;
-      this.page.drawText(marker, {
-        x: this.marginX,
-        y: baseY,
-        size,
-        font: this.font,
-        color: rgb(0.2, 0.25, 0.33),
-      });
-      this.rich(segs, { size, leading, indent, color: rgb(0.12, 0.16, 0.23), gapAfter: 2 });
-    });
-    this.y -= 4;
-  }
-
-  table(rows: Segment[][][], header: boolean) {
-    const size = 10.5;
-    const leading = size * 1.5;
-    const padX = 6;
-    const padY = 5;
-    const cols = rows[0]?.length ?? 1;
-    const colW = this.contentW / cols;
-    const cellMaxW = colW - padX * 2;
-    const rowH = rows.map((cells) => {
-      let maxLines = 1;
-      for (const segs of cells) {
-        const flat: Run[] = [];
-        for (const s of segs) for (const ch of s.text) flat.push({ ch, style: s.style });
-        let curW = 0;
-        let lines = 1;
-        for (const item of flat) {
-          const w = this.charW(item.ch, item.style, size);
-          if (curW + w > cellMaxW && curW > 0) {
-            lines++;
-            curW = 0;
-          }
-          curW += w;
-        }
-        if (lines > maxLines) maxLines = lines;
-      }
-      return maxLines * leading + padY * 2;
-    });
-    this.y -= 6;
-    const headerToRepeat = header ? [rows[0]] : null;
-    rows.forEach((cells, ri) => {
-      if (this.y - rowH[ri] < this.marginY) {
-        this.newPage();
-        if (headerToRepeat) {
-          this.y -= rowH[0];
-          this.drawRow(headerToRepeat[0], size, leading, padX, padY, colW, cellMaxW, true);
-          this.y -= 6;
-        }
-      }
-      this.drawRow(cells, size, leading, padX, padY, colW, cellMaxW, header && ri === 0);
-      this.y -= rowH[ri];
-    });
-    this.y -= 6;
-  }
-
-  drawRow(
-    cells: Segment[][],
-    size: number,
-    leading: number,
-    padX: number,
-    padY: number,
-    colW: number,
-    cellMaxW: number,
-    isHeader: boolean
-  ) {
-    const rowTop = this.y;
-    cells.forEach((segs, ci) => {
-      const cellLeft = this.marginX + ci * colW;
-      const flat: Run[] = [];
-      for (const s of segs) for (const ch of s.text) flat.push({ ch, style: s.style });
-      let lines = 1;
-      let curW = 0;
-      for (const item of flat) {
-        const w = this.charW(item.ch, item.style, size);
-        if (curW + w > cellMaxW && curW > 0) {
-          lines++;
-          curW = 0;
-        }
-        curW += w;
-      }
-      const hh = lines * leading + padY * 2;
-      this.page.drawRectangle({
-        x: cellLeft,
-        y: rowTop - hh,
-        width: colW,
-        height: hh,
-        color: isHeader ? rgb(0.94, 0.96, 0.99) : rgb(1, 1, 1),
-        borderColor: rgb(0.8, 0.84, 0.88),
-        borderWidth: 0.5,
-      });
-      this.richInCell(segs, size, leading, cellLeft + padX, rowTop - padY, cellMaxW, isHeader);
-    });
-  }
-
-  richInCell(segs: Segment[], size: number, leading: number, x0: number, topY: number, maxW: number, isHeader: boolean) {
-    const flat: Run[] = [];
-    for (const s of segs) for (const ch of s.text) flat.push({ ch, style: s.style });
-    let line: Run[] = [];
-    let curW = 0;
-    let yy = topY;
-    const flush = () => {
-      if (line.length === 0) return;
-      const baseY = yy - size;
-      let runText = "";
-      let runStyle: Style = line[0].style;
-      let runX = x0;
-      const emit = () => {
-        if (!runText) return;
-        const f = runStyle.bold || isHeader ? this.boldFont : this.font;
-        this.page.drawText(runText, {
-          x: runX,
-          y: baseY,
-          size,
-          font: f,
-          color: rgb(0.12, 0.16, 0.23),
-        });
-        runX += f.widthOfTextAtSize(runText, size);
-        runText = "";
-      };
-      for (const item of line) {
-        if (item.style !== runStyle) emit();
-        runStyle = item.style;
-        runText += item.ch;
-      }
-      emit();
-      yy -= leading;
-      line = [];
-      curW = 0;
-    };
-    for (const item of flat) {
-      if (item.ch === "\n") {
-        flush();
-        continue;
-      }
-      const w = this.charW(item.ch, item.style, size);
-      if (line.length > 0 && curW + w > maxW) flush();
-      line.push(item);
-      curW += w;
-    }
-    flush();
-  }
-
-  async image(src: string) {
-    try {
-      const m = /^data:(image\/(png|jpeg|jpg));base64,(.*)$/i.exec(src.trim());
-      if (!m) return;
-      const bytes = Uint8Array.from(atob(m[3]), (c) => c.charCodeAt(0));
-      const emb = m[2] === "png" ? await this.pdf.embedPng(bytes) : await this.pdf.embedJpg(bytes);
-      const iw = emb.width;
-      const ih = emb.height;
-      const maxW = this.contentW;
-      const w = Math.min(maxW, iw);
-      const h = (ih / iw) * w;
-      this.ensure(h);
-      this.page.drawImage(emb, { x: this.marginX, y: this.y - h, width: w, height: h });
-      this.y -= h + 8;
-    } catch (e) {
-      /* 忽略无法嵌入的图片 */
-    }
-  }
+/** Extract plain text from inline segments. */
+function plainText(segs: Segment[]): string {
+  return segs.map((s) => s.text).join("");
 }
 
-// 内联片段（保留 <strong>/<code>/<em>/<a> 样式，<br> 折行）
+/**
+ * Parse inline HTML elements into Segment array.
+ * Preserves <strong>/<code>/<em>/<a> styling info; <br> becomes \n.
+ */
 function inlineSegments(el: HTMLElement): Segment[] {
   const out: Segment[] = [];
   const push = (text: string, style: Style) => {
@@ -850,122 +445,350 @@ function inlineSegments(el: HTMLElement): Segment[] {
   return out;
 }
 
-function renderNode(w: PdfWriter, el: HTMLElement) {
+/**
+ * Render a block of mixed-format text using jsPDF's text() API.
+ * Handles bold/inline-code styles within a paragraph by splitting into runs.
+ * Auto-wraps CJK text at CONTENT_W boundary.
+ */
+function renderRichText(pdf: jsPDF, segs: Segment[], size: number = 11): void {
+  if (!segs.length) return;
+  const lineHeight = size * 1.55;
+  const fontName = "MicrosoftYaHei";
+
+  // Build flat run array
+  interface TextRun { text: string; bold: boolean; mono: boolean }
+  const runs: TextRun[] = [];
+  for (const s of segs) {
+    if (!s.text) continue;
+    runs.push({ text: s.text, bold: !!s.style.bold, mono: !!s.style.code });
+  }
+  if (!runs.length) return;
+
+  // Split each run into lines that fit CONTENT_W
+  interface LineRun { text: string; bold: boolean; mono: boolean }
+  const lines: LineRun[][] = [];
+  let currentLine: LineRun[] = [];
+
+  for (const run of runs) {
+    pdf.setFont(run.mono ? "courier" : fontName, run.bold ? "bold" : "normal");
+
+    const chars = run.text.split("");
+    let buf = "";
+
+    for (const ch of chars) {
+      const candidate = buf + ch;
+      const w = pdf.getTextWidth(candidate);
+      if (w > CONTENT_W && buf.length > 0) {
+        currentLine.push({ text: buf, bold: run.bold, mono: run.mono });
+        lines.push(currentLine);
+        currentLine = [];
+        buf = ch;
+      } else {
+        buf = candidate;
+      }
+    }
+    if (buf) currentLine.push({ text: buf, bold: run.bold, mono: run.mono });
+  }
+  if (currentLine.length) lines.push(currentLine);
+
+  // Render each line
+  if (lines.length === 0) return;
+  ensureSpace(lineHeight * lines.length);
+  for (const line of lines) {
+    let x = MARGIN_L;
+    for (const frag of line) {
+      pdf.setFont(frag.mono ? "courier" : fontName, frag.bold ? "bold" : "normal");
+      pdf.setTextColor(30, 35, 45);
+      pdf.text(frag.text, x, pdfY, { baseline: "top" });
+      x += pdf.getTextWidth(frag.text);
+    }
+    pdfY += lineHeight;
+  }
+  pdfY += 3; // gap after paragraph
+}
+
+/**
+ * Render an HTML element tree to jsPDF using autoTable for tables.
+ * This is the core rendering function — handles all block-level elements.
+ */
+function renderToJsPDF(pdf: jsPDF, el: HTMLElement): void {
   const tag = el.tagName.toLowerCase();
+
   switch (tag) {
-    case "h1":
-      w.heading(el.textContent || "", 20, rgb(0.12, 0.25, 0.69), true, 16, 10);
-      break;
-    case "h2":
-      w.heading(el.textContent || "", 16, rgb(0.12, 0.25, 0.69), false, 12, 8);
-      break;
-    case "h3":
-      w.heading(el.textContent || "", 13.5, rgb(0.2, 0.25, 0.33), false, 10, 6);
-      break;
-    case "h4":
-      w.heading(el.textContent || "", 12, rgb(0.2, 0.25, 0.33), false, 8, 5);
-      break;
-    case "p":
-      w.rich(inlineSegments(el), { size: 12, gapBefore: 2, gapAfter: 8 });
-      break;
-    case "pre": {
-      const code = el.querySelector("code");
-      w.codeBlock((code ? code.textContent : el.textContent) || "");
+    case "h1": {
+      ensureSpace(28);
+      pdf.setFont("MicrosoftYaHei", "bold");
+      pdf.setFontSize(22);
+      pdf.setTextColor(30, 64, 175);
+      pdf.text((el.textContent || "").trim(), MARGIN_L, pdfY, { baseline: "top" });
+      pdfY += 26;
+      // Underline
+      pdf.setDrawColor(219, 234, 254);
+      pdf.setLineWidth(0.8);
+      pdf.line(MARGIN_L, pdfY, PAGE_W - MARGIN_R, pdfY);
+      pdfY += 10;
       break;
     }
+    case "h2": {
+      ensureSpace(22);
+      pdf.setFont("MicrosoftYaHei", "bold");
+      pdf.setFontSize(17);
+      pdf.setTextColor(30, 64, 175);
+      pdf.text((el.textContent || "").trim(), MARGIN_L, pdfY, { baseline: "top" });
+      pdfY += 20;
+      break;
+    }
+    case "h3": {
+      ensureSpace(18);
+      pdf.setFont("MicrosoftYaHei", "bold");
+      pdf.setFontSize(14);
+      pdf.setTextColor(51, 65, 85);
+      pdf.text((el.textContent || "").trim(), MARGIN_L, pdfY, { baseline: "top" });
+      pdfY += 17;
+      break;
+    }
+    case "h4": {
+      ensureSpace(16);
+      pdf.setFont("MicrosoftYaHei", "bold");
+      pdf.setFontSize(12.5);
+      pdf.setTextColor(51, 65, 85);
+      pdf.text((el.textContent || "").trim(), MARGIN_L, pdfY, { baseline: "top" });
+      pdfY += 15;
+      break;
+    }
+    case "p":
+      renderRichText(pdf, inlineSegments(el), 11);
+      break;
+
+    case "pre": {
+      const codeEl = el.querySelector("code");
+      const codeText = (codeEl ? codeEl.textContent : el.textContent) || "";
+      const fontSize = 9.5;
+      const lineHeight = fontSize * 1.5;
+      // Wrap code lines
+      const rawLines = codeText.split("\n");
+      const wrappedLines: string[] = [];
+      pdf.setFont("courier", "normal");
+      pdf.setFontSize(fontSize);
+      for (const rl of rawLines) {
+        let buf = "";
+        for (const ch of rl) {
+          const cand = buf + ch;
+          if (pdf.getTextWidth(cand) > CONTENT_W - 20 && buf) {
+            wrappedLines.push(buf);
+            buf = ch;
+          } else {
+            buf = cand;
+          }
+        }
+        wrappedLines.push(buf || " ");
+      }
+      const blockH = wrappedLines.length * lineHeight + 14;
+      ensureSpace(blockH);
+      // Background rect
+      pdf.setFillColor(248, 250, 252);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.roundedRect(MARGIN_L, pdfY, CONTENT_W, blockH, 2, 2, "FD");
+      let ty = pdfY + 7;
+      pdf.setFontSize(fontSize);
+      pdf.setTextColor(23, 32, 48);
+      for (const wl of wrappedLines) {
+        pdf.text(wl, MARGIN_L + 10, ty, { baseline: "top" });
+        ty += lineHeight;
+      }
+      pdfY += blockH + 6;
+      break;
+    }
+
     case "ul":
     case "ol": {
-      const items = Array.from(el.querySelectorAll(":scope > li")).map((li) =>
-        inlineSegments(li as HTMLElement)
-      );
-      w.list(items, tag === "ol");
+      const items = Array.from(el.querySelectorAll(":scope > li"));
+      items.forEach((li, i) => {
+        const marker = tag === "ol" ? `${i + 1}. ` : "\u2022 ";
+        const segs = inlineSegments(li as HTMLElement);
+        ensureSpace(18);
+        pdf.setFont("MicrosoftYaHei", "normal");
+        pdf.setFontSize(11);
+        pdf.setTextColor(51, 59, 83);
+        pdf.text(marker, MARGIN_L, pdfY, { baseline: "top" });
+        const markerW = pdf.getTextWidth(marker);
+        // Render indented text (temporarily shift left margin)
+        const savedL = MARGIN_L;
+        (MARGIN_L as any) = MARGIN_L + markerW;
+        try {
+          renderRichText(pdf, segs, 11);
+          pdfY -= 3; // reduce gap between list items
+        } finally {
+          (MARGIN_L as any) = savedL;
+        }
+      });
+      pdfY += 4;
       break;
     }
-    case "blockquote":
-      w.blockquote(inlineSegments(el));
+
+    case "blockquote": {
+      const segs = inlineSegments(el);
+      ensureSpace(18);
+      const topY = pdfY;
+      renderRichText(pdf, segs, 11);
+      const bh = pdfY - topY;
+      // Left border bar
+      pdf.setFillColor(204, 212, 224);
+      pdf.rect(MARGIN_L, topY, 2, bh, "F");
+      pdfY += 4;
       break;
+    }
+
     case "hr":
-      w.hr();
+      ensureSpace(6);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.4);
+      pdf.line(MARGIN_L, pdfY + 3, PAGE_W - MARGIN_R, pdfY + 3);
+      pdfY += 12;
       break;
+
     case "table": {
       const trs = Array.from(el.querySelectorAll("tr"));
       const isHeader = !!el.querySelector("th");
-      const rows = trs.map((tr) =>
-        Array.from(tr.querySelectorAll("th,td")).map((c) => inlineSegments(c as HTMLElement))
-      );
-      w.table(rows, isHeader);
+
+      // Build body array for autoTable
+      const body: string[][] = [];
+      trs.forEach((tr) => {
+        const cells = Array.from(tr.querySelectorAll("th,td")).map(
+          (c) => (c.textContent || "").trim()
+        );
+        body.push(cells);
+      });
+
+      if (body.length === 0) break;
+
+      ensureSpace(30); // minimum for table start
+
+      autoTable(pdf, {
+        head: isHeader ? [body[0]] : undefined,
+        body: isHeader ? body.slice(1) : body,
+        startY: pdfY,
+        margin: { left: MARGIN_L, right: MARGIN_R },
+        styles: {
+          font: "MicrosoftYaHei",
+          fontSize: 9.5,
+          cellPadding: { top: 5, bottom: 5, left: 6, right: 6 },
+          textColor: [30, 35, 45],
+          lineColor: [203, 213, 225],
+          lineWidth: 0.3,
+          valign: "top",
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fontStyle: "bold",
+          fontSize: 9.5,
+          fillColor: [239, 246, 255],
+          textColor: [30, 64, 175],
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        tableLineColor: [203, 213, 225],
+        tableLineWidth: 0.3,
+      });
+
+      // Update pdfY to after the table
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pdfY = (pdf as any).lastAutoTable.finalY + 8;
       break;
     }
-    case "img": {
-      const src = el.getAttribute("src") || "";
-      w.image(src);
+
+    case "img":
+      // Images not yet supported in jsPDF path (rare in API docs)
       break;
-    }
+
     case "div":
     case "section":
     case "figure":
       Array.from(el.childNodes).forEach((n) => {
-        if (n.nodeType === Node.ELEMENT_NODE) renderNode(w, n as HTMLElement);
-        else if (n.nodeType === Node.TEXT_NODE && (n.textContent || "").trim())
-          w.rich([{ text: n.textContent || "", style: {} }], { size: 12, gapAfter: 4 });
+        if (n.nodeType === Node.ELEMENT_NODE)
+          renderToJsPDF(pdf, n as HTMLElement);
+        else if (n.nodeType === Node.TEXT_NODE && (n.textContent || "").trim()) {
+          ensureSpace(16);
+          pdf.setFont("MicrosoftYaHei", "normal");
+          pdf.setFontSize(11);
+          pdf.setTextColor(30, 35, 45);
+          pdf.text((n.textContent || "").trim(), MARGIN_L, pdfY, { baseline: "top" });
+          pdfY += 16;
+        }
       });
       break;
+
     default:
-      if ((el.textContent || "").trim())
-        w.rich(inlineSegments(el), { size: 12, gapAfter: 8 });
+      if ((el.textContent || "").trim()) {
+        renderRichText(pdf, inlineSegments(el), 11);
+      }
   }
 }
 
-// 生成可选中文本的 PDF，返回 base64 字节串（供 writeBinaryFile 写盘）
+// ---------------------------------------------------------------------------
+//  Generate PDF bytes (base64) via jsPDF + autoTable
+// ---------------------------------------------------------------------------
+
 async function htmlToPdfBytes(title: string, content: string): Promise<string> {
-  const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-  const [fb, bb] = await loadFontBytes();
-  // === 诊断日志（v0.1.19 调试用，确认后删除）===
-  console.error("[PDF-DIAG] font reg bytes:", fb.length, "bold bytes:", bb.length);
-  console.error("[PDF-DIAG] font header:", Array.from(fb.slice(0, 4)).map(b => b.toString(16).padStart(2,'0')).join(''));
-  // === 诊断结束 ===
+  // Create A4 portrait document
+  pdfInst = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+    compress: true,
+  }) as jsPDF;
+  pdfY = MARGIN_T;
 
-  // 尝试关闭子集化：如果浏览器 fontkit 子集化产出了错误的 cmap（字符→字形映射），
-  // 关闭子集化可绕过该 bug。代价是 PDF 体积增大（完整字体 ~8MB 嵌入）。
-  const font = await pdf.embedFont(fb, { subset: false });
-  const boldFont = await pdf.embedFont(bb, { subset: false });
+  // Register Chinese fonts from embedded base64 bytes.
+  // jsPDF's VFS (Virtual File System) stores fonts as base64 strings keyed by filename.
+  pdfInst.addFileToVFS("msyh.ttf", MSYH_TTF_B64);
+  pdfInst.addFileToVFS("msyhbd.ttf", MSYHBD_TTF_B64);
+  pdfInst.addFont("msyh.ttf", "MicrosoftYaHei", "normal");
+  pdfInst.addFont("msyhbd.ttf", "MicrosoftYaHei", "bold");
 
-  // === 诊断：验证宽度度量 ===
-  const testChars = "你好测试用于验证";
-  const size = 12;
-  const widths = [];
-  for (const ch of testChars) {
-    widths.push(`${ch}=${font.widthOfTextAtSize(ch, size).toFixed(2)}`);
-  }
-  console.error("[PDF-DIAG] widths(nosubset):", widths.join(', '));
-  console.error("[PDF-DIAG] fulltext width:", font.widthOfTextAtSize(testChars, size).toFixed(2));
-  // === 诊断结束 ===
+  // Render document title
+  pdfInst.setFont("MicrosoftYaHei", "bold");
+  pdfInst.setFontSize(24);
+  pdfInst.setTextColor(30, 64, 175);
+  pdfInst.text(title, MARGIN_L, pdfY, { baseline: "top" });
+  pdfY += 30;
 
-  const w = new PdfWriter(pdf, font, boldFont);
-  w.heading(title, 22, rgb(0.12, 0.25, 0.69), true, 0, 14);
+  // Parse HTML and render all elements
   const dom = new DOMParser().parseFromString(content, "text/html");
   Array.from(dom.body.childNodes).forEach((n) => {
-    if (n.nodeType === Node.ELEMENT_NODE) renderNode(w, n as HTMLElement);
-    else if (n.nodeType === Node.TEXT_NODE && (n.textContent || "").trim())
-      w.rich([{ text: n.textContent || "", style: {} }], { size: 12, gapAfter: 6 });
+    if (n.nodeType === Node.ELEMENT_NODE)
+      renderToJsPDF(pdfInst!, n as HTMLElement);
+    else if (n.nodeType === Node.TEXT_NODE && (n.textContent || "").trim()) {
+      ensureSpace(16);
+      pdfInst!.setFont("MicrosoftYaHei", "normal");
+      pdfInst!.setFontSize(11);
+      pdfInst!.setTextColor(30, 35, 45);
+      pdfInst!.text((n.textContent || "").trim(), MARGIN_L, pdfY, { baseline: "top" });
+      pdfY += 16;
+    }
   });
-  const bytes = await pdf.save();
-  console.error("[PDF-DIAG] pdf bytes:", bytes.length, "(subset=false, full font embedded)");
-  // 安全护栏：正常情况下 2 个字体（常规+粗体）嵌入完整字体，PDF 应在 20MB 内。
-  // 若浏览器 fontkit 仍为每个 drawText 重复嵌入完整字体，体积会暴涨到数百 MB，
-  // 此时直接报错而非写出损坏文件，引导用户反馈。
-  if (bytes.length > 80 * 1024 * 1024) {
-    throw new Error(`PDF 体积异常（${Math.round(bytes.length / 1024 / 1024)}MB），字体嵌入可能失败，请反馈此信息`);
-  }
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
-  }
-  return btoa(bin);
+
+  // Output as base64 data URI, strip the "data:application/pdf;base64," prefix
+  const dataUri = pdfInst.output("datauristring");
+  const b64 = dataUri.split(",")[1] || "";
+
+  // Cleanup refs
+  pdfInst = null;
+
+  return b64;
 }
 
+/**
+ * Export document content as PDF.
+ *
+ * v0.1.21: uses **jsPDF + jspdf-autotable** instead of hand-rolled pdf-lib layout.
+ * Tables are rendered by autoTable's mature engine (row heights, column widths,
+ * text wrapping, page breaks, header repeat — all handled automatically).
+ *
+ * Chinese text via Microsoft YaHei (regular + bold), embedded as base64 VFS fonts.
+ * Output is vector text (selectable/copyable), no rasterization.
+ */
 export async function exportAsPdf(title: string, content: string): Promise<boolean> {
   if (!content || !content.trim()) return false;
   try {
@@ -974,6 +797,7 @@ export async function exportAsPdf(title: string, content: string): Promise<boole
       filters: [{ name: "PDF 文件", extensions: ["pdf"] }],
     });
     if (!path) return false;
+
     const b64 = await htmlToPdfBytes(title, content);
     await api.writeBinaryFile(path, b64);
     return true;
