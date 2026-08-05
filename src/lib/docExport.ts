@@ -2,6 +2,12 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { api } from "./api";
+// 字体字节在构建期由 scripts/embed-fonts.mjs 注入（base64 字符串）。
+// 此处**静态**引入，确保运行期必定拿到确切字节，不依赖动态 import 的
+// 代码分割 chunk（Tauri 生产 WebView 加载该 21MB chunk 可能失败而回退到
+// 错误的 fetch 路径，导致 PDF 文字散乱）。静态引入会让主包增大 ~21MB，
+// 但桌面应用可接受，且彻底消除字体加载的环境不确定性。
+import { MSYH_TTF_B64, MSYHBD_TTF_B64 } from "./_fontBytes.generated";
 import {
   Document,
   Packer,
@@ -377,10 +383,11 @@ export async function exportAsMarkdown(title: string, content: string) {
 // 不会因字体变大。逐字符换行天然支持中文（无空格也能正确断行）。
 //
 // 字体以 base64 形式在构建期由 scripts/embed-fonts.mjs 注入
-// src/lib/_fontBytes.generated.ts，运行期直接解码使用，不再依赖 fetch 加载
-// 字体文件——避免 Tauri 生产构建中“/fonts/...”路径解析到错误/陈旧资源，从而
-// 产生文字散乱、间距巨大等乱码 PDF。该模块在首次导出 PDF 时按需动态加载，
-// 不影响应用启动速度。
+// src/lib/_fontBytes.generated.ts，运行期**静态引入并直接解码**使用，不再
+// 依赖 fetch 加载字体文件，也不依赖动态 import 的代码分割 chunk（Tauri 生产
+// WebView 加载该 21MB chunk 可能失败而回退到错误字体，产生文字散乱、间距巨大
+// 等乱码 PDF）。代价是主包增大约 21MB，桌面应用可接受，且彻底消除字体加载的
+// 环境不确定性。
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const len = bin.length;
@@ -390,17 +397,12 @@ function b64ToBytes(b64: string): Uint8Array {
 }
 
 async function loadFontBytes(): Promise<[Uint8Array, Uint8Array]> {
-  try {
-    const mod = await import("./_fontBytes.generated");
-    return [b64ToBytes(mod.MSYH_TTF_B64), b64ToBytes(mod.MSYHBD_TTF_B64)];
-  } catch {
-    // 兜底：构建未生成注入模块时（如直接跑 vite），退回 fetch 本地字体
-    const [a, b] = await Promise.all([
-      fetch("/fonts/msyh.ttf").then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x)),
-      fetch("/fonts/msyhbd.ttf").then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x)),
-    ]);
-    return [a, b];
+  // 静态引入已保证字节存在；此处仅做 base64 解码。若构建未注入字体字节，
+  // 直接抛错（而非静默回退到 fetch 错误字体），让问题暴露而不是产出乱码 PDF。
+  if (!MSYH_TTF_B64 || !MSYHBD_TTF_B64) {
+    throw new Error("字体字节未注入：请确认 scripts/embed-fonts.mjs 已在构建前运行");
   }
+  return [b64ToBytes(MSYH_TTF_B64), b64ToBytes(MSYHBD_TTF_B64)];
 }
 
 type Style = { bold?: boolean; code?: boolean; link?: boolean; italic?: boolean };
