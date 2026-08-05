@@ -470,7 +470,7 @@ function renderRichText(pdf: jsPDF, segs: Segment[], size: number = 11): void {
   let currentLine: LineRun[] = [];
 
   for (const run of runs) {
-    pdf.setFont(run.mono ? "courier" : fontName, run.bold ? "bold" : "normal");
+    pdf.setFont(run.mono ? "MicrosoftYaHei" : fontName, run.bold ? "bold" : "normal");
 
     const chars = run.text.split("");
     let buf = "";
@@ -497,7 +497,7 @@ function renderRichText(pdf: jsPDF, segs: Segment[], size: number = 11): void {
   for (const line of lines) {
     let x = MARGIN_L;
     for (const frag of line) {
-      pdf.setFont(frag.mono ? "courier" : fontName, frag.bold ? "bold" : "normal");
+      pdf.setFont(frag.mono ? "MicrosoftYaHei" : fontName, frag.bold ? "bold" : "normal");
       pdf.setTextColor(30, 35, 45);
       pdf.text(frag.text, x, pdfY, { baseline: "top" });
       x += pdf.getTextWidth(frag.text);
@@ -565,10 +565,10 @@ function renderToJsPDF(pdf: jsPDF, el: HTMLElement): void {
       const codeText = (codeEl ? codeEl.textContent : el.textContent) || "";
       const fontSize = 9.5;
       const lineHeight = fontSize * 1.5;
-      // Wrap code lines
+      // Wrap code lines — use YaHei font for CJK support (courier has no Chinese glyphs)
       const rawLines = codeText.split("\n");
       const wrappedLines: string[] = [];
-      pdf.setFont("courier", "normal");
+      pdf.setFont("MicrosoftYaHei", "normal");
       pdf.setFontSize(fontSize);
       for (const rl of rawLines) {
         let buf = "";
@@ -590,6 +590,7 @@ function renderToJsPDF(pdf: jsPDF, el: HTMLElement): void {
       pdf.setDrawColor(226, 232, 240);
       pdf.roundedRect(MARGIN_L, pdfY, CONTENT_W, blockH, 2, 2, "FD");
       let ty = pdfY + 7;
+      pdf.setFont("MicrosoftYaHei", "normal");
       pdf.setFontSize(fontSize);
       pdf.setTextColor(23, 32, 48);
       for (const wl of wrappedLines) {
