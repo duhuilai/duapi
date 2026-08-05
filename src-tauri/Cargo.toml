@@ -1,6 +1,6 @@
 [package]
 name = "duapi"
-version = "0.1.16"
+version = "0.1.17"
 description = "duapi - offline API debugging and documentation tool"
 authors = ["duhuilai"]
 edition = "2021"

@@ -1,9 +1,14 @@
 node_modules/
 dist/
+dist_safe/
 src-tauri/target/
 src-tauri/gen/schemas/
 .vite/
 *.log
+
+# Local build artifacts (installers exceed GitHub's 100MB file limit)
+release/
+vite.config.ts.timestamp-*.mjs
 
 # WorkBuddy internal project data
 .workbuddy/
