@@ -921,8 +921,27 @@ async function htmlToPdfBytes(title: string, content: string): Promise<string> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const [fb, bb] = await loadFontBytes();
-  const font = await pdf.embedFont(fb, { subset: true });
-  const boldFont = await pdf.embedFont(bb, { subset: true });
+  // === 诊断日志（v0.1.19 调试用，确认后删除）===
+  console.error("[PDF-DIAG] font reg bytes:", fb.length, "bold bytes:", bb.length);
+  console.error("[PDF-DIAG] font header:", Array.from(fb.slice(0, 4)).map(b => b.toString(16).padStart(2,'0')).join(''));
+  // === 诊断结束 ===
+
+  // 尝试关闭子集化：如果浏览器 fontkit 子集化产出了错误的 cmap（字符→字形映射），
+  // 关闭子集化可绕过该 bug。代价是 PDF 体积增大（完整字体 ~8MB 嵌入）。
+  const font = await pdf.embedFont(fb, { subset: false });
+  const boldFont = await pdf.embedFont(bb, { subset: false });
+
+  // === 诊断：验证宽度度量 ===
+  const testChars = "你好测试用于验证";
+  const size = 12;
+  const widths = [];
+  for (const ch of testChars) {
+    widths.push(`${ch}=${font.widthOfTextAtSize(ch, size).toFixed(2)}`);
+  }
+  console.error("[PDF-DIAG] widths(nosubset):", widths.join(', '));
+  console.error("[PDF-DIAG] fulltext width:", font.widthOfTextAtSize(testChars, size).toFixed(2));
+  // === 诊断结束 ===
+
   const w = new PdfWriter(pdf, font, boldFont);
   w.heading(title, 22, rgb(0.12, 0.25, 0.69), true, 0, 14);
   const dom = new DOMParser().parseFromString(content, "text/html");
@@ -932,6 +951,13 @@ async function htmlToPdfBytes(title: string, content: string): Promise<string> {
       w.rich([{ text: n.textContent || "", style: {} }], { size: 12, gapAfter: 6 });
   });
   const bytes = await pdf.save();
+  console.error("[PDF-DIAG] pdf bytes:", bytes.length, "(subset=false, full font embedded)");
+  // 安全护栏：正常情况下 2 个字体（常规+粗体）嵌入完整字体，PDF 应在 20MB 内。
+  // 若浏览器 fontkit 仍为每个 drawText 重复嵌入完整字体，体积会暴涨到数百 MB，
+  // 此时直接报错而非写出损坏文件，引导用户反馈。
+  if (bytes.length > 80 * 1024 * 1024) {
+    throw new Error(`PDF 体积异常（${Math.round(bytes.length / 1024 / 1024)}MB），字体嵌入可能失败，请反馈此信息`);
+  }
   let bin = "";
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
