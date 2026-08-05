@@ -206,7 +206,7 @@ export default function App() {
         <div className="logo">
           <img className="logo-img" src="/logo.png" alt="duapi" />
           <span>duapi</span>
-          <span className="ver-badge">v{data.version || "0.1.22"}</span>
+          <span className="ver-badge">v{data.version || "0.1.23"}</span>
         </div>
         <div className="spacer" />
         <nav>

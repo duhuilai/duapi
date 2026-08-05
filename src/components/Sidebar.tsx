@@ -264,7 +264,7 @@ export function Sidebar({
           </button>
         </div>
         <div className="ver-row">
-          <span>当前版本 v{data.version || "0.1.22"}</span>
+          <span>当前版本 v{data.version || "0.1.23"}</span>
           <a onClick={onCheckUpdate}>发现新版本</a>
         </div>
       </div>

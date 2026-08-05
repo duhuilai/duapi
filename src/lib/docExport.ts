@@ -85,26 +85,32 @@ function inlineRuns(el: HTMLElement): DocxInline[] {
   el.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent || "";
-      if (t) out.push(new TextRun(t));
+      if (t) out.push(new TextRun({ text: t, font: "Microsoft YaHei" }));
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const e = node as HTMLElement;
       const tag = e.tagName.toLowerCase();
       if (tag === "br") {
         out.push(new TextRun({ text: "", break: 1 }));
       } else if (tag === "strong" || tag === "b") {
-        out.push(new TextRun({ text: e.textContent || "", bold: true }));
+        out.push(new TextRun({ text: e.textContent || "", bold: true, font: "Microsoft YaHei" }));
       } else if (tag === "em" || tag === "i") {
-        out.push(new TextRun({ text: e.textContent || "", italics: true }));
+        out.push(new TextRun({ text: e.textContent || "", italics: true, font: "Microsoft YaHei" }));
       } else if (tag === "code") {
-        out.push(new TextRun({ text: e.textContent || "", font: "Consolas" }));
+        // Inline code: light gray bg via highlight, YaHei for CJK support
+        out.push(new TextRun({
+          text: e.textContent || "",
+          font: "Microsoft YaHei",
+          size: 20, // 10pt (half-points in docx)
+          shading: { type: ShadingType.SOLID, color: "none", fill: "F1F5F9" },
+        }));
       } else if (tag === "a") {
         const href = e.getAttribute("href") || "";
         const label = e.textContent || "";
-        out.push(new TextRun({ text: href ? `${label} (${href})` : label, color: "0563C1" }));
+        out.push(new TextRun({ text: href ? `${label} (${href})` : label, color: "0563C1", font: "Microsoft YaHei" }));
       } else if (tag === "span" || tag === "sub" || tag === "sup") {
         out.push(...inlineRuns(e));
       } else {
-        out.push(new TextRun(e.textContent || ""));
+        out.push(new TextRun({ text: e.textContent || "", font: "Microsoft YaHei" }));
       }
     }
   });
@@ -118,7 +124,7 @@ function blockElements(el: HTMLElement): DocxBlock[] {
   el.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = (node.textContent || "").trim();
-      if (t) out.push(new Paragraph({ children: [new TextRun(t)] }));
+      if (t) out.push(new Paragraph({ children: [new TextRun({ text: t, font: "Microsoft YaHei" })] }));
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -142,9 +148,15 @@ function blockElements(el: HTMLElement): DocxBlock[] {
         const text = (code ? code.textContent : e.textContent) || "";
         out.push(
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: "auto", fill: "F2F2F2" },
-            children: [new TextRun({ text, font: "Consolas" })],
-            spacing: { before: 80, after: 120 },
+            shading: { type: ShadingType.SOLID, color: "none", fill: "F8FAFC" },
+            border: {
+              top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+              bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+              left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+              right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+            },
+            children: [new TextRun({ text, font: "Microsoft YaHei", size: 18 })],
+            spacing: { before: 100, after: 120 },
           })
         );
         break;
