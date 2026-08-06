@@ -16,11 +16,24 @@ import {
   Table,
   TableRow,
   TableCell,
-  HeadingLevel,
   ShadingType,
   BorderStyle,
   WidthType,
+  LineRuleType,
 } from "docx";
+
+// ---------------------------------------------------------------------------
+//  中文字体规范（用户硬性要求）：
+//  正文：宋体（SimSun）小四（12pt = size 24 half-points），行距 1.5 倍
+//  一级标题：黑体（SimHei）三号（16pt = size 32）
+//  二级/三级标题：宋体（SimSun）三号（16pt = size 32）
+// ---------------------------------------------------------------------------
+const FONT_SONG = "SimSun"; // 宋体
+const FONT_HEI = "SimHei"; // 黑体
+const SIZE_XIAOSI = 24; // 小四 = 12pt（docx 以 half-point 计）
+const SIZE_SANHAO = 32; // 三号 = 16pt
+// 1.5 倍行距：lineRule=AUTO 时 line 以「240 分之一行」为单位，1.5 行 = 360
+const LINE_15 = { line: 360, lineRule: LineRuleType.AUTO };
 
 function escapeHtml(s: string): string {
   return s
@@ -80,37 +93,44 @@ type DocxBlock = Paragraph | Table;
 type DocxInline = TextRun;
 
 // Inline formatting inside a paragraph / table cell.
-function inlineRuns(el: HTMLElement): DocxInline[] {
+// `style` carries the font/size/base-bold for the current context
+// (heading vs body), so the same parser produces correctly-styled runs.
+interface RunStyle { font?: string; size?: number; bold?: boolean }
+
+function inlineRuns(el: HTMLElement, style: RunStyle = {}): DocxInline[] {
+  const font = style.font ?? FONT_SONG;
+  const size = style.size ?? SIZE_XIAOSI;
+  const baseBold = style.bold ?? false;
   const out: DocxInline[] = [];
   el.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent || "";
-      if (t) out.push(new TextRun({ text: t, font: "Microsoft YaHei" }));
+      if (t) out.push(new TextRun({ text: t, font, size, bold: baseBold }));
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const e = node as HTMLElement;
       const tag = e.tagName.toLowerCase();
       if (tag === "br") {
         out.push(new TextRun({ text: "", break: 1 }));
       } else if (tag === "strong" || tag === "b") {
-        out.push(new TextRun({ text: e.textContent || "", bold: true, font: "Microsoft YaHei" }));
+        out.push(new TextRun({ text: e.textContent || "", bold: true, font, size }));
       } else if (tag === "em" || tag === "i") {
-        out.push(new TextRun({ text: e.textContent || "", italics: true, font: "Microsoft YaHei" }));
+        out.push(new TextRun({ text: e.textContent || "", italics: true, font, size }));
       } else if (tag === "code") {
-        // Inline code: light gray bg via highlight, YaHei for CJK support
+        // Inline code: light gray bg, 宋体保持整篇字体统一（不再用 YaHei）
         out.push(new TextRun({
           text: e.textContent || "",
-          font: "Microsoft YaHei",
-          size: 20, // 10pt (half-points in docx)
+          font,
+          size,
           shading: { type: ShadingType.SOLID, color: "auto", fill: "F1F5F9" },
         }));
       } else if (tag === "a") {
         const href = e.getAttribute("href") || "";
         const label = e.textContent || "";
-        out.push(new TextRun({ text: href ? `${label} (${href})` : label, color: "0563C1", font: "Microsoft YaHei" }));
+        out.push(new TextRun({ text: href ? `${label} (${href})` : label, color: "0563C1", font, size }));
       } else if (tag === "span" || tag === "sub" || tag === "sup") {
-        out.push(...inlineRuns(e));
+        out.push(...inlineRuns(e, style));
       } else {
-        out.push(new TextRun({ text: e.textContent || "", font: "Microsoft YaHei" }));
+        out.push(new TextRun({ text: e.textContent || "", font, size, bold: baseBold }));
       }
     }
   });
@@ -119,12 +139,14 @@ function inlineRuns(el: HTMLElement): DocxInline[] {
 }
 
 // Block-level conversion (headings / p / pre / lists / table / hr / div ...).
+// 字体/字号/行距严格遵循用户规范：正文宋体小四 1.5 倍行距；
+// 一级标题黑体三号；二级/三级标题宋体三号。
 function blockElements(el: HTMLElement): DocxBlock[] {
   const out: DocxBlock[] = [];
   el.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = (node.textContent || "").trim();
-      if (t) out.push(new Paragraph({ children: [new TextRun({ text: t, font: "Microsoft YaHei" })] }));
+      if (t) out.push(new Paragraph({ children: [new TextRun({ text: t, font: FONT_SONG, size: SIZE_XIAOSI })] }));
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -132,16 +154,25 @@ function blockElements(el: HTMLElement): DocxBlock[] {
     const tag = e.tagName.toLowerCase();
     switch (tag) {
       case "h1":
-        out.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: inlineRuns(e) }));
+        out.push(new Paragraph({
+          children: inlineRuns(e, { font: FONT_HEI, size: SIZE_SANHAO, bold: true }),
+          spacing: { before: 240, after: 160, ...LINE_15 },
+        }));
         break;
       case "h2":
-        out.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: inlineRuns(e) }));
+        out.push(new Paragraph({
+          children: inlineRuns(e, { font: FONT_SONG, size: SIZE_SANHAO, bold: true }),
+          spacing: { before: 200, after: 120, ...LINE_15 },
+        }));
         break;
       case "h3":
-        out.push(new Paragraph({ heading: HeadingLevel.HEADING_3, children: inlineRuns(e) }));
+        out.push(new Paragraph({
+          children: inlineRuns(e, { font: FONT_SONG, size: SIZE_SANHAO }),
+          spacing: { before: 160, after: 100, ...LINE_15 },
+        }));
         break;
       case "p":
-        out.push(new Paragraph({ children: inlineRuns(e), spacing: { after: 120 } }));
+        out.push(new Paragraph({ children: inlineRuns(e), spacing: { after: 120, ...LINE_15 } }));
         break;
       case "pre": {
         const code = e.querySelector("code");
@@ -155,8 +186,8 @@ function blockElements(el: HTMLElement): DocxBlock[] {
               left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
               right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
             },
-            children: [new TextRun({ text, font: "Microsoft YaHei", size: 18 })],
-            spacing: { before: 100, after: 120 },
+            children: [new TextRun({ text, font: FONT_SONG, size: 18 })],
+            spacing: { before: 100, after: 120, line: 300, lineRule: LineRuleType.AUTO },
           })
         );
         break;
@@ -168,8 +199,8 @@ function blockElements(el: HTMLElement): DocxBlock[] {
           const prefix = tag === "ul" ? "\u2022  " : `${i + 1}.  `;
           out.push(
             new Paragraph({
-              children: [new TextRun({ text: prefix }), ...inlineRuns(li as HTMLElement)],
-              spacing: { after: 40 },
+              children: [new TextRun({ text: prefix, font: FONT_SONG, size: SIZE_XIAOSI }), ...inlineRuns(li as HTMLElement)],
+              spacing: { after: 40, ...LINE_15 },
             })
           );
         });
@@ -189,7 +220,7 @@ function blockElements(el: HTMLElement): DocxBlock[] {
         break;
       case "blockquote":
         out.push(
-          new Paragraph({ children: inlineRuns(e), indent: { left: 360 }, spacing: { after: 120 } })
+          new Paragraph({ children: inlineRuns(e), indent: { left: 360 }, spacing: { after: 120, ...LINE_15 } })
         );
         break;
       case "div":
@@ -214,7 +245,7 @@ function convertTable(table: HTMLElement): Table {
       children: cells.map(
         (c) =>
           new TableCell({
-            children: [new Paragraph({ children: inlineRuns(c as HTMLElement) })],
+            children: [new Paragraph({ children: inlineRuns(c as HTMLElement), spacing: { ...LINE_15 } })],
           })
       ),
     });
@@ -228,10 +259,23 @@ function convertTable(table: HTMLElement): Table {
 function buildDocx(title: string, content: string): Document {
   const dom = new DOMParser().parseFromString(content, "text/html");
   const children: DocxBlock[] = [
-    new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(title)] }),
+    new Paragraph({
+      children: [new TextRun({ text: title, font: FONT_HEI, size: SIZE_SANHAO, bold: true })],
+      spacing: { before: 0, after: 200, ...LINE_15 },
+    }),
     ...blockElements(dom.body),
   ];
-  return new Document({ sections: [{ children }] });
+  // 兜底默认样式：任何未显式设字体的 run 都落回「宋体小四」
+  return new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: FONT_SONG, size: SIZE_XIAOSI },
+        },
+      },
+    },
+    sections: [{ children }],
+  });
 }
 
 // ---------- HTML -> Markdown ----------
